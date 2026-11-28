@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../core_bridge.dart';
+import '../models.dart';
 import '../zh_script.dart';
 import 'live_http.dart';
 import 'live_models.dart';
@@ -10,7 +11,13 @@ import 'live_rooms.dart';
 import 'live_sources.dart';
 
 class LiveRepository {
-  LiveRepository({LiveHttp? http}) : _http = http ?? LiveHttp();
+  LiveRepository({LiveHttp? http, this.appRepository})
+    : _http = http ?? LiveHttp();
+
+  /// 模組直播源的數據通道（categories/catalog/detail/resolve）。
+  /// 由 openLive 在開啟直播頁時注入；未注入時模組源會報錯，
+  /// 內置源不受影響。
+  AppRepository? appRepository;
 
   /// 已失效的分类：源站仍返回，但频道统一跳转到版权拦截页。
   static const retiredCategories = ['weishizhibo'];
@@ -21,6 +28,11 @@ class LiveRepository {
   final Map<String, List<LivePlatform>> _platforms = {};
   final Map<String, List<LiveChannel>> _channels = {};
   final Map<String, List<int>> _routeOrders = {};
+
+  /// 模組房間的 Drama 原件（key 為 LiveChannel.key）：播放時要
+  /// 交返核心行 detail＋resolve。收藏/最近觀看重啟後冇呢份，
+  /// 會用 channel 記錄的 sourceId 重組。
+  final Map<String, Drama> _moduleDramas = {};
   int _generation = 0;
 
   void cancel() {
@@ -36,6 +48,7 @@ class LiveRepository {
     _platforms.clear();
     _channels.clear();
     _routeOrders.clear();
+    _moduleDramas.clear();
   }
 
   Future<List<LivePlatform>> platforms(
@@ -51,6 +64,7 @@ class LiveRepository {
       LiveProtocol.pingtai => await _pingtaiPlatforms(source),
       LiveProtocol.list => const [LivePlatform(id: 'all', name: '全部频道')],
       LiveProtocol.room => await LiveRoomClient(_http).platforms(source),
+      LiveProtocol.module => await _modulePlatforms(source, force: force),
     };
     if (result.isEmpty) throw AppFailure(zh('该直播源没有可用分类'));
     if (token == _generation) _platforms[source.id] = result;
@@ -74,9 +88,17 @@ class LiveRepository {
       LiveProtocol.room => await LiveRoomClient(
         _http,
       ).channels(source, platform, page: page),
+      LiveProtocol.module => await _moduleChannels(
+        source,
+        platform,
+        page: page,
+        force: force,
+      ),
     };
     if (result.isEmpty) {
-      if (page > 1 && source.protocol == LiveProtocol.room) {
+      if (page > 1 &&
+          (source.protocol == LiveProtocol.room ||
+              source.protocol == LiveProtocol.module)) {
         _channels[cacheKey] = const [];
         return const [];
       }
@@ -92,8 +114,95 @@ class LiveRepository {
     if (resolved.protocol == LiveProtocol.room) {
       return LiveRoomClient(_http).playback(resolved, channel);
     }
+    if (resolved.protocol == LiveProtocol.module) {
+      return _modulePlayback(resolved, channel);
+    }
     if (channel.urls.isEmpty) throw AppFailure(zh('该频道没有可用线路'));
     return LivePlayback(url: channel.urls.first, headers: channel.headers);
+  }
+
+  AppRepository get _modules {
+    final repository = appRepository;
+    if (repository == null) throw AppFailure(zh('直播模組未就緒，請重開直播頁'));
+    return repository;
+  }
+
+  /// 模組直播源的平台清單：直接用模組 categories() 申報的分類。
+  Future<List<LivePlatform>> _modulePlatforms(
+    LiveSource source, {
+    bool force = false,
+  }) async {
+    final categories = await _modules.categories(
+      source.moduleId,
+      force: force,
+    );
+    return [
+      for (final category in categories)
+        if (category.id.isNotEmpty)
+          LivePlatform(id: category.id, name: category.name),
+    ];
+  }
+
+  /// 模組直播源的房間清單：catalogPage(platform) 的 Drama 項目
+  /// 映射成直播頻道卡（串流地址播放時先經 resolveMedia 攞，
+  /// 所以 urls 留空、sourceId 存入 token 供重組 Drama）。
+  Future<List<LiveChannel>> _moduleChannels(
+    LiveSource source,
+    LivePlatform platform, {
+    int page = 1,
+    bool force = false,
+  }) async {
+    final result = await _modules.catalog(
+      source.moduleId,
+      category: platform.id,
+      page: page,
+      force: force,
+    );
+    return [
+      for (final drama in result.items) _moduleChannel(source, platform, drama),
+    ];
+  }
+
+  LiveChannel _moduleChannel(
+    LiveSource source,
+    LivePlatform platform,
+    Drama drama,
+  ) {
+    _moduleDramas[drama.id] = drama;
+    return LiveChannel(
+      key: drama.id,
+      name: drama.title,
+      urls: const [],
+      logo: drama.cover,
+      group: platform.name,
+      source: source.id,
+      token: drama.sourceId,
+      subtitle: drama.remark.isNotEmpty ? drama.remark : drama.heat,
+    );
+  }
+
+  /// 模組房間播放：行返一般模組路徑 detail＋resolve 攞串流
+  /// 地址同 headers，再交直播播放器播（FLV/HLS 都係 mpv 直播
+  /// 流，直播播放器接得到）。
+  Future<LivePlayback> _modulePlayback(
+    LiveSource source,
+    LiveChannel channel,
+  ) async {
+    final drama =
+        _moduleDramas[channel.key] ??
+        Drama(
+          id: channel.key,
+          source: channel.source,
+          sourceId: channel.token,
+          title: channel.name,
+        );
+    final detail = await _modules.detail(drama);
+    if (detail.episodes.isEmpty) {
+      throw AppFailure(zh('该直播间暂时无法播放'));
+    }
+    final plan = await _modules.resolve(detail.drama, detail.episodes.first);
+    if (plan.url.isEmpty) throw AppFailure(zh('该直播间暂时无法播放'));
+    return LivePlayback(url: plan.url, headers: plan.headers);
   }
 
   /// 合并同一面板的所有镜像：各镜像共享内容但分类子集不同，取并集后去重，

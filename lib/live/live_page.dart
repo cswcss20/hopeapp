@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../local_store.dart';
 
+import '../ui/app_scope.dart';
 import '../ui/widgets/focus_ring.dart';
 import '../ui/widgets/horizontal_scroll_bar.dart';
 import '../ui/widgets/status_view.dart';
@@ -52,7 +53,7 @@ class _LivePageState extends State<LivePage> {
   bool _hasMore = false;
   bool _loadingMore = false;
 
-  List<LiveSource> get _sources => LiveSource.visible(widget.greenMode);
+  List<LiveSource> get _sources => LiveSource.visibleAll(widget.greenMode);
 
   // 两条横向栏各自持有 controller：桌面端要靠它显示可拖动的滚动条。
   final _sourceScroll = ScrollController();
@@ -568,12 +569,18 @@ Future<void> openLive(
   BuildContext context, {
   required LocalStore store,
   bool greenMode = false,
-}) => Navigator.of(context).push(
-  MaterialPageRoute<void>(
-    builder: (_) => LivePage(
-      repository: sharedLiveRepository(),
-      store: liveStoreFor(store),
-      greenMode: greenMode,
+}) {
+  // 模組直播源經 AppRepository 攞平台/房間/串流，開啟時注入
+  // 共享的直播倉庫（內置源唔受影響）。
+  final repository = sharedLiveRepository()
+    ..appRepository = AppScope.of(context).repository;
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => LivePage(
+        repository: repository,
+        store: liveStoreFor(store),
+        greenMode: greenMode,
+      ),
     ),
-  ),
-);
+  );
+}

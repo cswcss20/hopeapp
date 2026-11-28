@@ -408,6 +408,11 @@ class LocalStore extends ChangeNotifier {
       sourceEnabled(source);
   List<SourceSite> get sources =>
       SourceSite.values.where((site) => allowsSource(site.id)).toList();
+
+  /// 探索頁可選的來源：申報了 live 的直播模組改由直播區進入，
+  /// 唔喺探索頁來源清單重複出現（模組商店照舊列出）。
+  List<SourceSite> get exploreSources =>
+      sources.where((site) => !site.live).toList();
   List<SourceSite> get permittedSources => [
     for (final site in SourceSite.values)
       if (!locked && profile.allows(site.id)) site,
@@ -752,9 +757,11 @@ class LocalStore extends ChangeNotifier {
   String get source {
     if (locked) return '';
     final value = _userSettings['source'];
-    return sources.any((site) => site.id == value)
+    // 探索頁當前來源唔可以係直播模組（改由直播區入）：舊設定
+    // 指住直播模組時退回第一個探索來源。
+    return exploreSources.any((site) => site.id == value)
         ? value as String
-        : sources.firstOrNull?.id ?? '';
+        : exploreSources.firstOrNull?.id ?? '';
   }
 
   DownloadPreferences get downloadPreferences {

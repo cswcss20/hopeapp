@@ -83,6 +83,8 @@ type ModuleManifest struct {
 	BrowserFetch       bool                 `json:"browserFetch"`
 	VerifyURL          string               `json:"verifyUrl"`
 	CoverAspect        string               `json:"coverAspect"`
+	Live               bool                 `json:"live"`
+	LivePublic         bool                 `json:"livePublic"`
 
 	Rankings       []ModuleRanking `json:"rankings"`
 	MediaAuthPaths []string        `json:"mediaAuthPaths"`
@@ -209,6 +211,8 @@ func (module *jsModule) descriptor() SourceDescriptor {
 		BrowserFetch:       module.manifest.BrowserFetch,
 		VerifyURL:          strings.TrimSpace(module.manifest.VerifyURL),
 		CoverAspect:        normalizeCoverAspect(module.manifest.CoverAspect),
+		Live:               module.manifest.Live,
+		LivePublic:         module.manifest.Live && module.manifest.LivePublic,
 	}
 }
 

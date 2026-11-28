@@ -69,7 +69,16 @@ type SourceDescriptor struct {
 	// CoverAspect 是模組申報的封面卡預設比例（"portrait"/
 	// "landscape"）：前端用作該來源 tab 的預設比例，使用者
 	// per-tab 設定優先。未申報時為空字串。
-	CoverAspect        string
+	CoverAspect string
+	// Live 是模組申報「呢個係直播源」：前端將已安裝且申報咗
+	// live 嘅模組併入直播區來源清單（同內置源並排），平台用
+	// categories()、房間用 catalogPage()、播放用 resolveMedia，
+	// 並唔再喺探索頁來源清單重複出現。未申報時為 false。
+	Live bool
+	// LivePublic 是模組申報直播源屬公開平台：綠色模式下仍可見；
+	// 未申報（預設 false）跟成人源一樣喺綠色模式整源隱藏。
+	// 只喺 Live 為 true 時有意義（descriptor 歸一化）。
+	LivePublic bool
 	ValidCategory      func(category string) bool
 	Rankings           []RankingBoard
 }

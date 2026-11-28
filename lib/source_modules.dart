@@ -18,6 +18,8 @@ class SourceModule {
     this.browserFetch = false,
     this.verifyUrl = '',
     this.coverAspect = '',
+    this.live = false,
+    this.livePublic = false,
     this.baseUrl = '',
     this.installed = false,
     this.previous = '',
@@ -47,6 +49,8 @@ class SourceModule {
       'landscape' => 'landscape',
       _ => '',
     },
+    live: json['live'] == true,
+    livePublic: json['live'] == true && json['livePublic'] == true,
     baseUrl: json['baseUrl'] as String? ?? '',
     installed: json['installed'] == true,
     previous: json['previous'] as String? ?? '',
@@ -69,6 +73,10 @@ class SourceModule {
   final bool browserFetch;
   final String verifyUrl;
   final String coverAspect;
+  // 模組申報自己係直播源（live）同屬公開平台（livePublic）；
+  // 語意同 SourceSite.live/livePublic。
+  final bool live;
+  final bool livePublic;
   final String baseUrl;
   final bool installed;
 

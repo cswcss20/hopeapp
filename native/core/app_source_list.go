@@ -29,6 +29,8 @@ type nativeSourceInfo struct {
 	BrowserFetch    bool                 `json:"browserFetch,omitempty"`
 	VerifyURL       string               `json:"verifyUrl,omitempty"`
 	CoverAspect     string               `json:"coverAspect,omitempty"`
+	Live            bool                 `json:"live,omitempty"`
+	LivePublic      bool                 `json:"livePublic,omitempty"`
 }
 
 func (engine *nativeEngine) sourceList() []nativeSourceInfo {
@@ -47,7 +49,7 @@ func (engine *nativeEngine) sourceList() []nativeSourceInfo {
 			CoverAlign: descriptor.CoverAlign, AuthURL: descriptor.AuthURL, LibraryKinds: descriptor.LibraryKinds,
 			BaseURL: descriptor.BaseURL, Hosts: descriptor.Hosts, Auth: descriptor.Auth, Settings: descriptor.Settings,
 			DetailActions: descriptor.DetailActions, BrowserFetch: descriptor.BrowserFetch, VerifyURL: descriptor.VerifyURL,
-			CoverAspect: descriptor.CoverAspect,
+			CoverAspect: descriptor.CoverAspect, Live: descriptor.Live, LivePublic: descriptor.LivePublic,
 		}
 		_, search := providerAs[Searcher](p)
 		_, warningSearch := providerAs[WarningSearcher](p)

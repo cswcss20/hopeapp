@@ -1,4 +1,6 @@
-enum LiveProtocol { pingtai, list, room }
+import '../models.dart';
+
+enum LiveProtocol { pingtai, list, room, module }
 
 class LiveSource {
   const LiveSource({
@@ -15,6 +17,7 @@ class LiveSource {
     this.adult = false,
     this.builtin = true,
     this.enabled = true,
+    this.moduleId = '',
   });
 
   final String id;
@@ -41,9 +44,16 @@ class LiveSource {
   final bool builtin;
   final bool enabled;
 
+  /// 模組直播源的模組 id（protocol 為 module 時用）：平台經模組
+  /// categories()、房間經 catalogPage()、播放經 resolveMedia。
+  /// 內置源為空字串。
+  final String moduleId;
+
   /// 是否支持按页续载。整类一次返回的源不参与滚动加载。
   bool get paginated =>
-      protocol == LiveProtocol.list || protocol == LiveProtocol.room;
+      protocol == LiveProtocol.list ||
+      protocol == LiveProtocol.room ||
+      protocol == LiveProtocol.module;
 
   /// 默认斗鱼，其次哔哩哔哩、虎牙，原有的秀果直播排在最后。
   static const values = <LiveSource>[
@@ -97,6 +107,30 @@ class LiveSource {
       if (!greenMode || !source.adult) source,
   ];
 
+  /// 已安裝且在 manifest 申報了 live 的模組直播源。模組未申報
+  /// livePublic 時跟成人源一樣（綠色模式整源隱藏）；申報了
+  /// livePublic 的公開平台綠色模式下仍可見。
+  static List<LiveSource> moduleValues() => [
+    for (final site in SourceSite.values)
+      if (site.live)
+        LiveSource(
+          id: site.id,
+          name: site.name,
+          description: site.description,
+          protocol: LiveProtocol.module,
+          moduleId: site.id,
+          adult: !site.livePublic,
+          builtin: false,
+        ),
+  ];
+
+  /// 直播區完整來源清單：內置源＋模組直播源，一齊行綠色模式
+  /// 整源過濾。
+  static List<LiveSource> visibleAll(bool greenMode) => [
+    for (final source in [...values, ...moduleValues()])
+      if (!greenMode || !source.adult) source,
+  ];
+
   /// 只过滤成人源的分类；公开平台即使有娱乐分区也不整类隐藏。
   static bool hidesCategory(
     String name, {
@@ -113,8 +147,9 @@ class LiveSource {
       if (!greenMode || !source.adult) source,
   ];
 
-  static LiveSource? byId(String id) =>
-      values.where((source) => source.id == id).firstOrNull;
+  static LiveSource? byId(String id) => [...values, ...moduleValues()]
+      .where((source) => source.id == id)
+      .firstOrNull;
 
   static bool isBuiltin(String id) => values.any((source) => source.id == id);
 

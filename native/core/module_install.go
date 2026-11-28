@@ -45,6 +45,8 @@ type nativeModuleInfo struct {
 	BrowserFetch  bool                 `json:"browserFetch,omitempty"`
 	VerifyURL     string               `json:"verifyUrl,omitempty"`
 	CoverAspect   string               `json:"coverAspect,omitempty"`
+	Live          bool                 `json:"live,omitempty"`
+	LivePublic    bool                 `json:"livePublic,omitempty"`
 	BaseURL       string               `json:"baseUrl,omitempty"`
 	Installed     bool                 `json:"installed"`
 	Previous     string   `json:"previous,omitempty"`
@@ -56,7 +58,7 @@ func moduleInfo(manifest ModuleManifest) nativeModuleInfo {
 	return nativeModuleInfo{ID: manifest.ID, Name: manifest.Name, Version: manifest.Version, Description: manifest.Description,
 		Hosts: manifest.Hosts, Capabilities: manifest.Capabilities, Adult: *manifest.Adult, CoverAlign: manifest.CoverAlign, AuthURL: manifest.AuthURL, LibraryKinds: normalizeLibraryKinds(manifest.LibraryKinds),
 		Auth: normalizeModuleAuth(manifest.Auth), Settings: normalizeModuleSettings(manifest.Settings), DetailActions: normalizeDetailActions(manifest.DetailActions),
-		BrowserFetch: manifest.BrowserFetch, VerifyURL: strings.TrimSpace(manifest.VerifyURL), CoverAspect: normalizeCoverAspect(manifest.CoverAspect), BaseURL: manifest.BaseURL}
+		BrowserFetch: manifest.BrowserFetch, VerifyURL: strings.TrimSpace(manifest.VerifyURL), CoverAspect: normalizeCoverAspect(manifest.CoverAspect), Live: manifest.Live, LivePublic: manifest.Live && manifest.LivePublic, BaseURL: manifest.BaseURL}
 }
 
 func (engine *nativeEngine) modules() ([]nativeModuleInfo, error) {

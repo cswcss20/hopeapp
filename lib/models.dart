@@ -259,6 +259,8 @@ class SourceSite {
     this.browserFetch = false,
     this.verifyUrl = '',
     this.coverAspect = '',
+    this.live = false,
+    this.livePublic = false,
   });
   factory SourceSite.fromJson(Map<String, dynamic> json) => SourceSite(
     json['id'] as String? ?? '',
@@ -293,6 +295,8 @@ class SourceSite {
       'landscape' => 'landscape',
       _ => '',
     },
+    live: json['live'] == true,
+    livePublic: json['live'] == true && json['livePublic'] == true,
   );
   final String id;
   final String name;
@@ -345,6 +349,13 @@ class SourceSite {
   // 模組申報的封面卡預設比例（'portrait'/'landscape'/''）：
   // 該來源 tab 未有使用者 per-tab 設定時用此預設。
   final String coverAspect;
+  // 模組申報自己係直播源（live）：已安裝後併入直播區來源清單
+  // （平台用 categories()、房間用 catalogPage()、播放用
+  // resolveMedia），探索頁來源清單唔再重複列出。未申報為 false。
+  final bool live;
+  // 模組申報直播源屬公開平台（livePublic）：綠色模式下仍可見；
+  // 未申報（預設 false）跟成人源一樣喺綠色模式整源隱藏。
+  final bool livePublic;
 
   /// 實際生效的收藏種類：有申報用申報；有 library 能力但冇申報
   /// 時預設只有 favorites（向後相容舊模組）；冇 library 能力回空。
