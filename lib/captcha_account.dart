@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-class SoraniAccount {
-  const SoraniAccount({this.loggedIn = false, this.name = ''});
-  factory SoraniAccount.fromJson(Map<String, dynamic> json) => SoraniAccount(
+class CaptchaAccount {
+  const CaptchaAccount({this.loggedIn = false, this.name = ''});
+  factory CaptchaAccount.fromJson(Map<String, dynamic> json) => CaptchaAccount(
     loggedIn: json['loggedIn'] == true,
     name: json['name'] as String? ?? '',
   );
@@ -10,8 +10,8 @@ class SoraniAccount {
   final String name;
 }
 
-class SoraniCaptcha {
-  const SoraniCaptcha({
+class CaptchaChallenge {
+  const CaptchaChallenge({
     required this.id,
     required this.background,
     required this.template,
@@ -20,7 +20,7 @@ class SoraniCaptcha {
     required this.templateWidth,
     required this.templateHeight,
   });
-  factory SoraniCaptcha.fromJson(Map<String, dynamic> json) => SoraniCaptcha(
+  factory CaptchaChallenge.fromJson(Map<String, dynamic> json) => CaptchaChallenge(
     id: json['id'] as String,
     background: UriData.parse(
       json['backgroundImage'] as String,
@@ -40,8 +40,8 @@ class SoraniCaptcha {
   final int templateHeight;
 }
 
-class SoraniCaptchaPoint {
-  const SoraniCaptchaPoint(this.x, this.y, this.type, this.t);
+class CaptchaPoint {
+  const CaptchaPoint(this.x, this.y, this.type, this.t);
   final int x;
   final int y;
   final String type;
@@ -49,8 +49,8 @@ class SoraniCaptchaPoint {
   Map<String, Object> toJson() => {'x': x, 'y': y, 'type': type, 't': t};
 }
 
-class SoraniCaptchaTrack {
-  const SoraniCaptchaTrack({
+class CaptchaTrack {
+  const CaptchaTrack({
     required this.backgroundWidth,
     required this.backgroundHeight,
     required this.templateWidth,
@@ -65,7 +65,7 @@ class SoraniCaptchaTrack {
   final int templateHeight;
   final int startTime;
   final int stopTime;
-  final List<SoraniCaptchaPoint> points;
+  final List<CaptchaPoint> points;
   Map<String, Object> toJson() => {
     'bgImageWidth': backgroundWidth,
     'bgImageHeight': backgroundHeight,

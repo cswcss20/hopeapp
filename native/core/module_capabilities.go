@@ -132,6 +132,12 @@ func (p *jsProvider) LibraryWrite(ctx context.Context, kind string, drama Librar
 	return p.call(ctx, "libraryWrite", &ignored, kind, drama, add)
 }
 
+func (p *jsProvider) DetailAction(ctx context.Context, actionID string, drama LibraryDrama) (DetailActionResult, error) {
+	var result DetailActionResult
+	err := p.call(ctx, "detailAction", &result, actionID, drama)
+	return result, err
+}
+
 func (p *jsProvider) CatalogState() json.RawMessage {
 	var state json.RawMessage
 	if p.quickCall("catalogState", &state) != nil || string(state) == "null" {

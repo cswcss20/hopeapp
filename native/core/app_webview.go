@@ -163,6 +163,10 @@ func firstChallengeURL(candidates []string) string {
 
 func (engine *nativeEngine) sourceChallengeURL(source string) string {
 	id := canonicalProviderSource(source)
+	// 模組申報咗 verifyUrl 時優先用申報值，冇先用 BaseURL 推斷。
+	if desc, ok := registeredDescriptor(id); ok && strings.TrimSpace(desc.VerifyURL) != "" {
+		return strings.TrimSpace(desc.VerifyURL)
+	}
 	base := ""
 	if engine.downloader != nil {
 		base = strings.TrimSpace(engine.downloader.providerBaseURL(id))

@@ -10,12 +10,14 @@ import '../../webview_bridge.dart';
 import '../app_scope.dart';
 import '../widgets/focus_ring.dart';
 
-/// 模組瀏覽器登入/驗證入口。
-/// 用戶在此頁完成站方驗證或登入後，模組自動讀取 Cookie 與實際 UA，
-/// 通過通用的 sourceAccount(source, 'setCookies', ...) 寫回模組狀態。
-/// 登入頁地址優先用模組 manifest 申報的 authUrl；supjav-cookie
-/// 未申報該欄位（舊模組），沿用其寫死地址，行為不變。
-const _supjavAuthUrl = 'https://supjav.com/zh/';
+/// 模組瀏覽器登入/驗證入口（manifest auth type='browser'）。
+/// 用戶在此頁完成站方驗證或登入後，讀取 Cookie 與實際 UA，通過
+/// 通用的 sourceAccount(source, 'setCookies', ...) 寫回模組狀態。
+/// 登入頁地址、保存模式、登記橋接與否全部由模組申報決定
+/// （SourceSite.effectiveAuth，含舊模組 fallback）：
+/// saveMode 'auto'＝cf_clearance 出現即自動保存（Cloudflare
+/// 驗證型），'manual'＝只手動保存（帳號登入型，cookie 要等
+/// 登入後先擷取）；bridge=true 保存後登記 WebView 橋接抓頁。
 const _fallbackUA =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -75,26 +77,24 @@ class _BrowserAuthViewState extends State<BrowserAuthView> {
 
   AppRepository get _repository => AppScope.of(context).repository;
 
-  bool get _isSupjav => widget.source == 'supjav-cookie';
+  SourceSite get _site => SourceSite.byId(widget.source);
 
-  /// 帳號登入來源：manifest 申報咗 authUrl（例如 MissAV）。呢類來源
-  /// 要用戶喺頁面登入帳號，cookie 必須等登入完成後先擷取。
-  bool get _isAccountLogin =>
-      SourceSite.byId(widget.source).authUrl.isNotEmpty;
+  /// 生效的登入申報（冇申報行舊模組 fallback，見
+  /// SourceSite.effectiveAuth）。入口只會喺 browser 型先出，
+  /// 呢度 null 只係防禦。
+  ModuleAuth? get _auth => _site.effectiveAuth;
 
-  /// 登入/驗證頁地址：manifest authUrl 優先；supjav-cookie 未申報
-  /// 時沿用舊寫死地址（行為不變）。
-  String get _authUrl {
-    final declared = SourceSite.byId(widget.source).authUrl;
-    if (declared.isNotEmpty) return declared;
-    return _isSupjav ? _supjavAuthUrl : '';
-  }
+  /// 自動保存模式（Cloudflare 驗證型）；false 係手動保存模式
+  /// （帳號登入型）。
+  bool get _autoSave => _auth?.autoSave ?? false;
 
-  String get _title => _isSupjav
-      ? 'SupJav 浏览器验证'
-      : '${SourceSite.byId(widget.source).name} 登录验证';
+  /// 登入/驗證頁地址（申報 url／舊 authUrl／baseUrl fallback）。
+  String get _authUrl => _auth?.url ?? '';
 
-  String get _initialStatus => _isSupjav
+  String get _title =>
+      _autoSave ? '${_site.name} 浏览器验证' : '${_site.name} 登录验证';
+
+  String get _initialStatus => _autoSave
       ? '请在下方页面完成 Cloudflare 验证；通过后会自动保存。'
             '若页面已正常打开却没有自动保存，可点「保存验证结果」手动保存。'
       : '请在下方页面登录账号；登录后点「保存验证结果」保存登录状态。';
@@ -123,12 +123,13 @@ class _BrowserAuthViewState extends State<BrowserAuthView> {
   Future<void> _capture({required bool auto}) async {
     final controller = _controller;
     if (controller == null || _busy) return;
-    // 帳號登入來源停用自動保存：cf_clearance 會喺用戶登入之前出現，
-    // 自動保存會存低冇 session 嘅 cookie；必須等用戶登入後手動保存。
-    if (auto && _isAccountLogin) return;
-    // _saved 只擋自動保存；帳號登入來源手動保存可重複擷取更新 cookie。
-    // supjav-cookie 維持原有 guard，行為不變。
-    if (_saved && (auto || !_isAccountLogin)) return;
+    // 手動保存模式（帳號登入）停用自動保存：cf_clearance 會喺用戶
+    // 登入之前出現，自動保存會存低冇 session 嘅 cookie；必須等
+    // 用戶登入後手動保存。
+    if (auto && !_autoSave) return;
+    // _saved 只擋自動保存；手動模式下手動保存可重複擷取更新
+    // cookie。自動模式維持原有 guard，行為不變。
+    if (_saved && (auto || _autoSave)) return;
     setState(() => _busy = true);
     try {
       final cookies = await CookieManager.instance().getCookies(
@@ -170,14 +171,14 @@ class _BrowserAuthViewState extends State<BrowserAuthView> {
         'ua': ua,
       });
       LibraryLogin.invalidate(widget.source);
-      // 同时登记 WebView 桥接：之后该域名的主机请求改走真浏览器抓页，
-      // 直连被 Cloudflare 挡时也能拿到页面。登记失败不影响上面的保存。
-      // 帐号登录来源（authUrl）不登记：它们直连本身可用（住宅 IP），
-      // 登记会让所有取页改走串行的无头 WebView 桥接 fetch，慢很多；
-      // 真撞 Cloudflare 时自愈验证流程会再登记。
+      // 申報 bridge=true 時同時登記 WebView 桥接：之后该域名的主机
+      // 请求改走真浏览器抓页，直连被 Cloudflare 挡时也能拿到页面。
+      // 登记失败不影响上面的保存。帳號登入來源唔申報 bridge：
+      // 它們直連本身可用，登記會讓所有取頁改走串行的無頭 WebView
+      // 桥接 fetch，慢很多；真撞 Cloudflare 時自愈驗證流程會再登記。
       var bridged = false;
       try {
-        if (WebViewBridge.supported && !_isAccountLogin) {
+        if (WebViewBridge.supported && (_auth?.bridge ?? false)) {
           await WebViewBridge.registerVerified(
             _repository,
             url: _authUrl,
@@ -253,22 +254,24 @@ class _BrowserAuthViewState extends State<BrowserAuthView> {
               ),
             ),
             Expanded(
-              child: InAppWebView(
-                initialUrlRequest: URLRequest(url: WebUri(_authUrl)),
-                initialSettings: InAppWebViewSettings(
-                  userAgent: _fallbackUA,
-                  javaScriptEnabled: true,
-                  domStorageEnabled: true,
-                  supportZoom: true,
-                ),
-                onWebViewCreated: (controller) {
-                  _controller = controller;
-                  _startPolling();
-                },
-                onLoadStop: (controller, url) {
-                  _capture(auto: true);
-                },
-              ),
+              child: _authUrl.isEmpty
+                  ? const Center(child: Text('该站源未申报名登录页地址'))
+                  : InAppWebView(
+                      initialUrlRequest: URLRequest(url: WebUri(_authUrl)),
+                      initialSettings: InAppWebViewSettings(
+                        userAgent: _fallbackUA,
+                        javaScriptEnabled: true,
+                        domStorageEnabled: true,
+                        supportZoom: true,
+                      ),
+                      onWebViewCreated: (controller) {
+                        _controller = controller;
+                        _startPolling();
+                      },
+                      onLoadStop: (controller, url) {
+                        _capture(auto: true);
+                      },
+                    ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

@@ -140,6 +140,13 @@ class _AppBootstrapState extends State<AppBootstrap>
         store = local;
         repository.access = local;
       });
+      // 模組設定值同步入核心（host.settings() 讀取）；失敗唔阻
+      // 啟動，核心有 module-settings.json 後備。
+      unawaited(
+        repository.syncModuleSettings(local.moduleSettingsMap).catchError((
+          _,
+        ) {}),
+      );
     } catch (failure) {
       if (mounted) setState(() => error = failure);
     }

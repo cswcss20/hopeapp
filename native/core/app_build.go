@@ -37,15 +37,12 @@ func nativeActionSource(input nativeInput) string {
 	if input.Source != "" {
 		return canonicalProviderSource(input.Source)
 	}
-	if input.Action == "soraniAccount" {
-		return "sorani"
-	}
 	return ""
 }
 
 func nativeAuthorizeInput(input nativeInput) error {
 	switch input.Action {
-	case "recommendations", "cachedRecommendations", "suggestions", "soraniAccount", "sourceAccount", "libraryItems":
+	case "recommendations", "cachedRecommendations", "suggestions", "sourceAccount", "libraryItems", "detailAction":
 		if !nativeSourceAvailable(nativeActionSource(input)) {
 			return errNativeBuildSource
 		}

@@ -4,40 +4,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../captcha_account.dart';
 import '../../core_bridge.dart';
 import '../../models.dart';
-import '../../sorani_account.dart';
 import '../../zh_script.dart';
 import '../app_scope.dart';
 import '../widgets/focus_ring.dart';
 import '../widgets/form_text_field.dart';
 
-const _soraniSite = 'https://www.sorani.net/';
+/// 滑塊驗證碼登入（模組 manifest auth type='captcha'）：先填
+/// 帳號密碼，再完成滑塊拼圖驗證，經模組 account 的
+/// captcha/login/logout 指令行。泛用於任何申報此登入方式的
+/// 模組，唔綁死個別站源。
+Future<CaptchaAccount?> showCaptchaLogin(
+  BuildContext context,
+  String source,
+) => showDialog<CaptchaAccount>(
+  context: context,
+  barrierDismissible: false,
+  builder: (_) => _CaptchaLoginDialog(
+    repository: AppScope.of(context).repository,
+    source: source,
+  ),
+);
 
-Future<SoraniAccount?> showSoraniLogin(BuildContext context) =>
-    showDialog<SoraniAccount>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) =>
-          _SoraniLoginDialog(repository: AppScope.of(context).repository),
-    );
-
-bool soraniAccountAvailable() {
-  final site = SourceSite.byId('sorani');
-  return site.available && site.account;
+bool captchaAccountAvailable(String source) {
+  final site = SourceSite.byId(source);
+  return site.available && site.account && (site.effectiveAuth?.isCaptcha ?? false);
 }
 
-class SoraniAccountButton extends StatefulWidget {
-  const SoraniAccountButton({super.key, required this.admin, this.style});
+class CaptchaAccountButton extends StatefulWidget {
+  const CaptchaAccountButton({
+    super.key,
+    required this.source,
+    required this.admin,
+    this.style,
+  });
+  final String source;
   final bool admin;
   final ButtonStyle? style;
 
   @override
-  State<SoraniAccountButton> createState() => _SoraniAccountButtonState();
+  State<CaptchaAccountButton> createState() => _CaptchaAccountButtonState();
 }
 
-class _SoraniAccountButtonState extends State<SoraniAccountButton> {
-  SoraniAccount? _account;
+class _CaptchaAccountButtonState extends State<CaptchaAccountButton> {
+  CaptchaAccount? _account;
   var _busy = false;
 
   AppRepository get _repository => AppScope.of(context).repository;
@@ -49,21 +61,21 @@ class _SoraniAccountButtonState extends State<SoraniAccountButton> {
   }
 
   Future<void> _load() async {
-    final account = await _repository.soraniAccount().catchError(
-      (_) => const SoraniAccount(),
+    final account = await _repository.captchaAccount(widget.source).catchError(
+      (_) => const CaptchaAccount(),
     );
     if (mounted) setState(() => _account = account);
   }
 
   Future<void> _login() async {
-    final account = await showSoraniLogin(context);
+    final account = await showCaptchaLogin(context, widget.source);
     if (account != null && mounted) setState(() => _account = account);
   }
 
   Future<void> _logout() async {
     setState(() => _busy = true);
     try {
-      final account = await _repository.soraniLogout();
+      final account = await _repository.captchaLogout(widget.source);
       if (mounted) setState(() => _account = account);
     } catch (failure) {
       if (mounted) {
@@ -97,21 +109,22 @@ class _SoraniAccountButtonState extends State<SoraniAccountButton> {
   }
 }
 
-class _SoraniLoginDialog extends StatefulWidget {
-  const _SoraniLoginDialog({required this.repository});
+class _CaptchaLoginDialog extends StatefulWidget {
+  const _CaptchaLoginDialog({required this.repository, required this.source});
   final AppRepository repository;
+  final String source;
 
   @override
-  State<_SoraniLoginDialog> createState() => _SoraniLoginDialogState();
+  State<_CaptchaLoginDialog> createState() => _CaptchaLoginDialogState();
 }
 
-class _SoraniLoginDialogState extends State<_SoraniLoginDialog> {
+class _CaptchaLoginDialogState extends State<_CaptchaLoginDialog> {
   final _identifier = TextEditingController();
   final _password = TextEditingController();
   final _passwordFocus = FocusNode();
   var _verifying = false;
   var _busy = false;
-  SoraniCaptcha? _captcha;
+  CaptchaChallenge? _captcha;
   String? _error;
 
   @override
@@ -137,14 +150,14 @@ class _SoraniLoginDialogState extends State<_SoraniLoginDialog> {
   Future<void> _reload() async {
     setState(() => _captcha = null);
     try {
-      final captcha = await widget.repository.soraniCaptcha();
+      final captcha = await widget.repository.captchaChallenge(widget.source);
       if (mounted) setState(() => _captcha = captcha);
     } catch (failure) {
       if (mounted) setState(() => _error = '$failure');
     }
   }
 
-  Future<void> _submit(SoraniCaptchaTrack track) async {
+  Future<void> _submit(CaptchaTrack track) async {
     final captcha = _captcha;
     if (captcha == null || _busy) return;
     setState(() {
@@ -152,7 +165,8 @@ class _SoraniLoginDialogState extends State<_SoraniLoginDialog> {
       _error = null;
     });
     try {
-      final account = await widget.repository.soraniLogin(
+      final account = await widget.repository.captchaLogin(
+        widget.source,
         identifier: _identifier.text.trim(),
         password: _password.text,
         captchaId: captcha.id,
@@ -173,12 +187,18 @@ class _SoraniLoginDialogState extends State<_SoraniLoginDialog> {
   }
 
   Future<void> _register() async {
+    final site = SourceSite.byId(widget.source);
+    final auth = site.effectiveAuth;
+    final registerUrl = auth != null && auth.registerUrl.isNotEmpty
+        ? auth.registerUrl
+        : site.baseUrl;
+    if (registerUrl.isEmpty) return;
     final opened = await launchUrl(
-      Uri.parse(_soraniSite),
+      Uri.parse(registerUrl),
       mode: LaunchMode.externalApplication,
     ).catchError((_) => false);
     if (opened) return;
-    await Clipboard.setData(const ClipboardData(text: _soraniSite));
+    await Clipboard.setData(ClipboardData(text: registerUrl));
     if (mounted) {
       ScaffoldMessenger.of(
         context,
@@ -251,7 +271,9 @@ class _SoraniLoginDialogState extends State<_SoraniLoginDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(zh(_verifying ? '安全验证' : '登录青空')),
+    title: Text(
+      zh(_verifying ? '安全验证' : '登录 ${SourceSite.byId(widget.source).name}'),
+    ),
     content: SizedBox(
       width: 352,
       child: SingleChildScrollView(
@@ -297,9 +319,9 @@ class _SliderCaptcha extends StatefulWidget {
     required this.enabled,
     required this.onTrack,
   });
-  final SoraniCaptcha captcha;
+  final CaptchaChallenge captcha;
   final bool enabled;
-  final ValueChanged<SoraniCaptchaTrack> onTrack;
+  final ValueChanged<CaptchaTrack> onTrack;
 
   @override
   State<_SliderCaptcha> createState() => _SliderCaptchaState();
@@ -308,7 +330,7 @@ class _SliderCaptcha extends StatefulWidget {
 class _SliderCaptchaState extends State<_SliderCaptcha> {
   static const _maxPoints = 4000;
   static const _keyStep = 4.0;
-  final _points = <SoraniCaptchaPoint>[];
+  final _points = <CaptchaPoint>[];
   final _focus = FocusNode();
   Offset? _origin;
   DateTime? _started;
@@ -381,7 +403,7 @@ class _SliderCaptchaState extends State<_SliderCaptcha> {
     _offset = x;
     if (_points.length < _maxPoints || type == 'up') {
       _points.add(
-        SoraniCaptchaPoint(
+        CaptchaPoint(
           x.round(),
           delta.dy.round(),
           type,
@@ -434,7 +456,7 @@ class _SliderCaptchaState extends State<_SliderCaptcha> {
     }
     setState(() {});
     widget.onTrack(
-      SoraniCaptchaTrack(
+      CaptchaTrack(
         backgroundWidth: background.width.round(),
         backgroundHeight: background.height.round(),
         templateWidth: template.width.round(),

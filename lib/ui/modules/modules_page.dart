@@ -12,13 +12,15 @@ import '../../library_sync.dart';
 import '../../local_store.dart';
 import '../../models.dart';
 import '../../source_modules.dart';
+import '../../webview_bridge.dart';
 import '../app_scope.dart';
+import '../settings/captcha_account_view.dart';
 import '../settings/settings_rows.dart';
 import 'module_install.dart';
 import '../../zh_script.dart';
-import '../settings/emby_account_view.dart';
-import '../settings/sorani_account_view.dart';
 import 'browser_auth_view.dart';
+import 'module_form_login_view.dart';
+import 'module_settings_view.dart';
 import '../widgets/bar_button.dart';
 import '../widgets/focus_ring.dart';
 import '../widgets/form_text_field.dart';
@@ -332,6 +334,7 @@ class _ModulesPageState extends State<ModulesPage>
               enabled: _store.sourceEnabled(module.id),
               onToggle: _toggleFor(module),
               admin: _store.profile.admin,
+              store: _store,
               onLibrarySync: () => _syncLibrary(module.id),
               onUpdate: update != null && enabled
                   ? () {
@@ -424,6 +427,7 @@ class _ModulesPageState extends State<ModulesPage>
       enabled: _store.sourceEnabled(module.id),
       onToggle: _toggleFor(module),
       admin: _store.profile.admin,
+      store: _store,
       onLibrarySync: () => _syncLibrary(module.id),
       onDetails: AppScope.of(context).television
           ? () => _menu(module, _updateFor(module, latest[module.id]))
@@ -876,6 +880,78 @@ ButtonStyle _cardButton(ColorScheme colors, {bool primary = false}) =>
       foregroundColor: primary ? colors.onPrimaryContainer : null,
     );
 
+/// 按模組 manifest auth 申報決定登入入口：browser/form/captcha
+/// 各出對應掣；冇申報行舊模組 fallback（見 effectiveAuth）。
+/// 冇 account 能力或冇登入方式時回 null（唔出入口）。
+Widget? _loginEntry(
+  SourceModule module, {
+  required bool admin,
+  ButtonStyle? style,
+  VoidCallback? onSaved,
+}) {
+  final auth = module.effectiveAuth;
+  if (auth == null || !module.capabilities.contains('account')) return null;
+  if (auth.isCaptcha) {
+    return captchaAccountAvailable(module.id)
+        ? CaptchaAccountButton(source: module.id, admin: admin, style: style)
+        : null;
+  }
+  if (auth.isForm) {
+    return ModuleFormLoginButton(
+      source: module.id,
+      admin: admin,
+      style: style,
+      onSaved: onSaved,
+    );
+  }
+  if (auth.isBrowser && WebViewBridge.supported) {
+    return BrowserAuthButton(
+      source: module.id,
+      style: style,
+      onSaved: onSaved,
+    );
+  }
+  return null;
+}
+
+/// 模組申報 browserFetch 時的「瀏覽器驗證」入口：主動行一次
+/// verifySource 自愈流程，唔使等攞頁錯誤先觸發。
+class _BrowserVerifyButton extends StatelessWidget {
+  const _BrowserVerifyButton({required this.source, this.style});
+
+  final String source;
+  final ButtonStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusRing(
+      radius: 20,
+      child: FilledButton.tonalIcon(
+        style: style,
+        onPressed: () async {
+          final repository = AppScope.of(context).repository;
+          try {
+            final ok = await repository.verifySource(source);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(zh(ok ? '浏览器验证完成' : '验证未完成'))),
+              );
+            }
+          } catch (failure) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text('$failure')));
+            }
+          }
+        },
+        icon: const Icon(Icons.public_rounded),
+        label: Text(zh('浏览器验证')),
+      ),
+    );
+  }
+}
+
 class _InstalledCard extends StatelessWidget {
   const _InstalledCard({
     required this.module,
@@ -883,12 +959,14 @@ class _InstalledCard extends StatelessWidget {
     required this.enabled,
     required this.onToggle,
     required this.admin,
+    required this.store,
     required this.onDetails,
     required this.onUpdate,
     required this.onUninstall,
     this.onLibrarySync,
   });
   final SourceModule module;
+  final LocalStore store;
   final ModuleIndexEntry? update;
   final bool enabled;
   final ValueChanged<bool>? onToggle;
@@ -927,19 +1005,20 @@ class _InstalledCard extends StatelessWidget {
             ),
       onTap: onDetails,
       leading: [
-        if (!television && module.id == 'sorani' && soraniAccountAvailable())
-          SoraniAccountButton(admin: admin, style: _cardButton(colors)),
-        if (!television &&
-            module.id == 'emby' &&
-            module.capabilities.contains('account'))
-          EmbyAccountButton(admin: admin, style: _cardButton(colors)),
-        if (!television &&
-            (module.authUrl.isNotEmpty || module.id == 'supjav-cookie') &&
-            module.capabilities.contains('account'))
-          BrowserAuthButton(
-            source: module.id,
+        if (!television)
+          ?_loginEntry(
+            module,
+            admin: admin,
             style: _cardButton(colors),
             onSaved: onLibrarySync,
+          ),
+        if (!television && module.browserFetch && WebViewBridge.supported)
+          _BrowserVerifyButton(source: module.id, style: _cardButton(colors)),
+        if (!television && module.settings.isNotEmpty)
+          ModuleSettingsButton(
+            source: module.id,
+            store: store,
+            style: _cardButton(colors),
           ),
       ],
       actions: television
@@ -1322,11 +1401,13 @@ class _ModuleMenu extends StatelessWidget {
     required this.enabled,
     required this.onToggle,
     required this.admin,
+    required this.store,
     required this.onUpdate,
     required this.onUninstall,
     this.onLibrarySync,
   });
   final SourceModule module;
+  final LocalStore store;
   final ModuleIndexEntry? update;
   final bool enabled;
   final ValueChanged<bool>? onToggle;
@@ -1355,13 +1436,11 @@ class _ModuleMenu extends StatelessWidget {
         ],
       ),
       actions: [
-        if (module.id == 'sorani' && soraniAccountAvailable())
-          SoraniAccountButton(admin: admin),
-        if (module.id == 'emby' && module.capabilities.contains('account'))
-          EmbyAccountButton(admin: admin),
-        if ((module.authUrl.isNotEmpty || module.id == 'supjav-cookie') &&
-            module.capabilities.contains('account'))
-          BrowserAuthButton(source: module.id, onSaved: onLibrarySync),
+        ?_loginEntry(module, admin: admin, onSaved: onLibrarySync),
+        if (module.browserFetch && WebViewBridge.supported)
+          _BrowserVerifyButton(source: module.id),
+        if (module.settings.isNotEmpty)
+          ModuleSettingsButton(source: module.id, store: store),
         if (update != null)
           FocusRing(
             radius: 20,

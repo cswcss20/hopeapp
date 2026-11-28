@@ -10,6 +10,7 @@ import '../app_scope.dart';
 import '../downloads/download_actions.dart';
 import '../theme/app_theme.dart';
 import '../widgets/focus_ring.dart';
+import '../widgets/detail_actions.dart';
 import '../widgets/follow_button.dart';
 import 'episode_grid.dart';
 import 'mini_player.dart';
@@ -370,6 +371,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 drama: _drama,
                 radius: 10,
               ),
+              DetailActionPills(drama: _drama, radius: 10),
               Semantics(
                 label: '下载选集',
                 button: true,

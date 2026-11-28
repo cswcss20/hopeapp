@@ -478,6 +478,20 @@ func (p *jsProvider) hostObject(instance *jsInstance) *goja.Object {
 			prepared, err := p.host.PrepareWebMedia(instance.ctx, media.providerMedia(), sourceName)
 			return moduleMedia(prepared), err
 		},
+		"settings": func() map[string]any {
+			values := map[string]any{}
+			for _, setting := range normalizeModuleSettings(p.module.manifest.Settings) {
+				if setting.Default != nil {
+					values[setting.ID] = setting.Default
+				}
+			}
+			if downloader, ok := p.host.(*Downloader); ok {
+				for key, value := range downloader.moduleSettingsFor(id) {
+					values[key] = value
+				}
+			}
+			return values
+		},
 		"loadState": func(name string) (string, error) {
 			data, err := p.host.LoadState(moduleStatePrefix + id + "-" + name)
 			return string(data), err

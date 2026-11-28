@@ -697,15 +697,36 @@ class LocalStore extends ChangeNotifier {
         : 'portrait';
   }
 
-  /// 卡片封面比例可按「站源|分類」逐頁覆蓋，未設定時用全域預設。
+  /// 卡片封面比例可按「站源|分類」逐頁覆蓋，未設定時用模組
+  /// manifest 申報的 coverAspect 預設，再冇先用全域預設。
   String coverCardAspectFor(String sourceId, String categoryId) {
     final aspects = _settings['coverCardAspects'];
     if (aspects is Map) {
       final value = aspects['$sourceId|$categoryId'];
       if (coverCardAspectModes.containsKey(value)) return value as String;
     }
+    final declared = SourceSite.byId(sourceId).coverAspect;
+    if (coverCardAspectModes.containsKey(declared)) return declared;
     return coverCardAspect;
   }
+
+  /// 模組設定值（manifest settings 申報）：按站源存
+  /// {source: {settingId: value}}，入 settings.json 跟備份走；
+  /// 核心經 syncModuleSettings 同步後供 host.settings() 讀取。
+  Map<String, Map<String, dynamic>> get moduleSettingsMap {
+    final raw = _settings['moduleSettings'];
+    if (raw is! Map) return const {};
+    return {
+      for (final entry in raw.entries)
+        if (entry.key is String && entry.value is Map)
+          entry.key as String: Map<String, dynamic>.from(
+            entry.value as Map,
+          ),
+    };
+  }
+
+  Map<String, dynamic> moduleSettingValues(String source) =>
+      moduleSettingsMap[source] ?? const {};
 
   /// 搜尋頁專用比例，未設定時跟全域預設，唔會改動全域值。
   String get coverCardAspectSearch {
@@ -988,6 +1009,16 @@ class LocalStore extends ChangeNotifier {
       coverCardAspectModes.containsKey(value)
       ? _setting('coverCardAspectSearch', value)
       : Future.value();
+  Future<void> setModuleSetting(String source, String id, Object? value) =>
+      _queue(
+        () => _saveSettings({
+          ..._settings,
+          'moduleSettings': {
+            ...moduleSettingsMap,
+            source: {...moduleSettingValues(source), id: value},
+          },
+        }),
+      );
   Future<void> setCheckUpdates(bool value) => _setting('checkUpdates', value);
   Future<void> setAutoExport(bool value) =>
       _setting('exportAfterDownload', value);

@@ -12,6 +12,13 @@ class SourceModule {
     this.coverAlign = '',
     this.authUrl = '',
     this.libraryKinds = const [],
+    this.auth,
+    this.settings = const [],
+    this.detailActions = const [],
+    this.browserFetch = false,
+    this.verifyUrl = '',
+    this.coverAspect = '',
+    this.baseUrl = '',
     this.installed = false,
     this.previous = '',
     this.token = '',
@@ -30,6 +37,17 @@ class SourceModule {
     coverAlign: json['coverAlign'] as String? ?? '',
     authUrl: json['authUrl'] as String? ?? '',
     libraryKinds: LibraryKind.listFromJson(json['libraryKinds']),
+    auth: ModuleAuth.fromJsonOrNull(json['auth']),
+    settings: ModuleSetting.listFromJson(json['settings']),
+    detailActions: ModuleDetailAction.listFromJson(json['detailActions']),
+    browserFetch: json['browserFetch'] == true,
+    verifyUrl: json['verifyUrl'] as String? ?? '',
+    coverAspect: switch ((json['coverAspect'] as String? ?? '').trim()) {
+      'portrait' => 'portrait',
+      'landscape' => 'landscape',
+      _ => '',
+    },
+    baseUrl: json['baseUrl'] as String? ?? '',
     installed: json['installed'] == true,
     previous: json['previous'] as String? ?? '',
     token: json['token'] as String? ?? '',
@@ -45,7 +63,37 @@ class SourceModule {
   final String coverAlign;
   final String authUrl;
   final List<LibraryKind> libraryKinds;
+  final ModuleAuth? auth;
+  final List<ModuleSetting> settings;
+  final List<ModuleDetailAction> detailActions;
+  final bool browserFetch;
+  final String verifyUrl;
+  final String coverAspect;
+  final String baseUrl;
   final bool installed;
+
+  /// 實際生效的登入方式（同 SourceSite.effectiveAuth 同一規則）：
+  /// 有 auth 申報用申報；冇申報行舊模組 fallback（authUrl→手動
+  /// 瀏覽器登入；account 能力＋固定 hosts→自動保存＋橋接；
+  /// hosts 含 '*' 嘅自架伺服器型唔行瀏覽器 fallback）。
+  ModuleAuth? get effectiveAuth {
+    final declared = auth;
+    if (declared != null) return declared;
+    if (authUrl.isNotEmpty) {
+      return ModuleAuth(type: 'browser', url: authUrl);
+    }
+    if (capabilities.contains('account') &&
+        baseUrl.isNotEmpty &&
+        !hosts.contains('*')) {
+      return ModuleAuth(
+        type: 'browser',
+        url: baseUrl,
+        saveMode: 'auto',
+        bridge: true,
+      );
+    }
+    return null;
+  }
   final String previous;
   final String token;
   final String error;

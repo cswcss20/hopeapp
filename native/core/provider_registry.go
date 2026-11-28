@@ -46,8 +46,215 @@ type SourceDescriptor struct {
 	// （拉取存 site list＋詳情頁收藏掣 write-through 對象），其餘
 	// kind 即時攞、不存檔。未申報時為 nil，前端預設只有 favorites。
 	LibraryKinds []LibraryKind
+	// Auth 是模組在 manifest 申報的登入方式（跟 CoverAlign 同一
+	// 管線）：前端按申報決定模組頁顯示邊種登入入口（browser
+	// 瀏覽器登入／form 表格登入／captcha 滑塊驗證登入）。未申報
+	// 時為 nil，前端行舊模組 fallback（authUrl 優先）。
+	Auth *ModuleAuth
+	// Settings 是模組在 manifest 申報的設定項清單：前端在模組頁
+	// 自動生成設定入口同泛用設定頁，值經 host.settings() 交模組
+	// 讀取。未申報時為 nil。
+	Settings []ModuleSetting
+	// DetailActions 是模組在 manifest 申報的詳情頁自訂動作：前端
+	// 按申報出掣，撳咗呼叫模組的 detailAction(id, drama) export。
+	// 未申報時為 nil。
+	DetailActions []ModuleDetailAction
+	// BrowserFetch 是模組申報「攞頁要行瀏覽器橋接」：前端在模組
+	// 卡自動出「瀏覽器驗證」入口（行 verifySource 自愈流程），
+	// 唔使等錯誤先觸發。
+	BrowserFetch bool
+	// VerifyURL 是模組申報的瀏覽器驗證頁地址：sourceChallengeURL
+	// 優先用申報值，冇先用 BaseURL 推斷。
+	VerifyURL string
+	// CoverAspect 是模組申報的封面卡預設比例（"portrait"/
+	// "landscape"）：前端用作該來源 tab 的預設比例，使用者
+	// per-tab 設定優先。未申報時為空字串。
+	CoverAspect        string
 	ValidCategory      func(category string) bool
 	Rankings           []RankingBoard
+}
+
+// ModuleAuth 是模組申報的登入方式。Type 決定前端入口形態：
+// "browser" 用瀏覽器登入頁（URL 為登入頁，SaveMode "auto" 係
+// cf_clearance 出現即自動保存、"manual" 係只准手動保存，Bridge
+// 決定保存後登記 WebView 橋接與否）；"form" 用泛用表格登入頁
+// （Fields 申報欄位，值經 sourceAccount("login", {fieldId: 值})
+// 交模組）；"captcha" 用滑塊驗證碼登入頁（RegisterURL 為可選
+// 的註冊頁地址）。
+type ModuleAuth struct {
+	Type        string            `json:"type"`
+	URL         string            `json:"url,omitempty"`
+	SaveMode    string            `json:"saveMode,omitempty"`
+	Bridge      bool              `json:"bridge,omitempty"`
+	Fields      []ModuleAuthField `json:"fields,omitempty"`
+	RegisterURL string            `json:"registerUrl,omitempty"`
+}
+
+// ModuleAuthField 是表格登入的一個欄位申報：ID 是交畀模組的
+// payload key，Label 是前端顯示名，Type 只認 "text"/"password"。
+type ModuleAuthField struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Type     string `json:"type"`
+	Required bool   `json:"required,omitempty"`
+	Hint     string `json:"hint,omitempty"`
+}
+
+// normalizeModuleAuth 清理模組申報的登入方式：Type 只認
+// browser/form/captcha，其餘當未申報（nil）；browser 的 SaveMode
+// 只認 "auto"，其餘一律 "manual"；form 欄位去空白、丟空 id、
+// 按 id 去重、Label 缺省用 ID、Type 只認 "password"，其餘 "text"；
+// form 冇有效欄位時當未申報。
+func normalizeModuleAuth(in *ModuleAuth) *ModuleAuth {
+	if in == nil {
+		return nil
+	}
+	auth := &ModuleAuth{
+		Type:        strings.TrimSpace(in.Type),
+		URL:         strings.TrimSpace(in.URL),
+		RegisterURL: strings.TrimSpace(in.RegisterURL),
+	}
+	switch auth.Type {
+	case "browser":
+		auth.SaveMode = "manual"
+		if strings.TrimSpace(in.SaveMode) == "auto" {
+			auth.SaveMode = "auto"
+		}
+		auth.Bridge = in.Bridge
+	case "form":
+		seen := map[string]bool{}
+		for _, field := range in.Fields {
+			id := strings.TrimSpace(field.ID)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			label := strings.TrimSpace(field.Label)
+			if label == "" {
+				label = id
+			}
+			fieldType := "text"
+			if strings.TrimSpace(field.Type) == "password" {
+				fieldType = "password"
+			}
+			auth.Fields = append(auth.Fields, ModuleAuthField{
+				ID: id, Label: label, Type: fieldType,
+				Required: field.Required, Hint: strings.TrimSpace(field.Hint),
+			})
+		}
+		if len(auth.Fields) == 0 {
+			return nil
+		}
+	case "captcha":
+	default:
+		return nil
+	}
+	return auth
+}
+
+// ModuleSetting 是模組申報的一個設定項：ID 是 host.settings()
+// 回傳物件的 key，Label 是前端顯示名，Type 只認
+// "text"/"toggle"/"select"，Default 是未設定時的預設值（text/
+// select 為字串、toggle 為布林），Options 是 select 的選項清單。
+type ModuleSetting struct {
+	ID      string               `json:"id"`
+	Label   string               `json:"label"`
+	Type    string               `json:"type"`
+	Default any                  `json:"default,omitempty"`
+	Options []ModuleSettingOption `json:"options,omitempty"`
+}
+
+// ModuleSettingOption 是 select 設定的一個選項：ID 是存入的值，
+// Name 是前端顯示名（缺省用 ID）。
+type ModuleSettingOption struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// normalizeModuleSettings 清理模組申報的設定項：去空白、丟空
+// id、按 id 去重、Label 缺省用 ID、Type 只認 toggle/select，
+// 其餘一律 text；select 冇有效選項時降級做 text。
+func normalizeModuleSettings(in []ModuleSetting) []ModuleSetting {
+	seen := map[string]bool{}
+	var out []ModuleSetting
+	for _, setting := range in {
+		id := strings.TrimSpace(setting.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		label := strings.TrimSpace(setting.Label)
+		if label == "" {
+			label = id
+		}
+		settingType := "text"
+		switch strings.TrimSpace(setting.Type) {
+		case "toggle":
+			settingType = "toggle"
+		case "select":
+			settingType = "select"
+		}
+		var options []ModuleSettingOption
+		if settingType == "select" {
+			optionSeen := map[string]bool{}
+			for _, option := range setting.Options {
+				optionID := strings.TrimSpace(option.ID)
+				if optionID == "" || optionSeen[optionID] {
+					continue
+				}
+				optionSeen[optionID] = true
+				name := strings.TrimSpace(option.Name)
+				if name == "" {
+					name = optionID
+				}
+				options = append(options, ModuleSettingOption{ID: optionID, Name: name})
+			}
+			if len(options) == 0 {
+				settingType = "text"
+			}
+		}
+		out = append(out, ModuleSetting{
+			ID: id, Label: label, Type: settingType,
+			Default: setting.Default, Options: options,
+		})
+	}
+	return out
+}
+
+// ModuleDetailAction 是模組申報的一個詳情頁自訂動作：ID 是呼叫
+// 模組 detailAction(id, drama) 時的動作標識，Label 是前端掣名。
+type ModuleDetailAction struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// normalizeDetailActions 清理模組申報的詳情頁動作：去空白、丟
+// 空 id、按 id 去重、Label 缺省用 ID。
+func normalizeDetailActions(in []ModuleDetailAction) []ModuleDetailAction {
+	seen := map[string]bool{}
+	var out []ModuleDetailAction
+	for _, action := range in {
+		id := strings.TrimSpace(action.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		label := strings.TrimSpace(action.Label)
+		if label == "" {
+			label = id
+		}
+		out = append(out, ModuleDetailAction{ID: id, Label: label})
+	}
+	return out
+}
+
+// normalizeCoverAspect 只認 "portrait"/"landscape"，其餘回空。
+func normalizeCoverAspect(in string) string {
+	switch strings.TrimSpace(in) {
+	case "portrait", "landscape":
+		return strings.TrimSpace(in)
+	}
+	return ""
 }
 
 // LibraryKind 是模組申報的一個帳號收藏種類：ID 是 libraryItems 的
@@ -225,6 +432,21 @@ type AccountProvider interface {
 type LibraryProvider interface {
 	LibraryItems(ctx context.Context, kind string, page int) ([]Drama, bool, error)
 	LibraryWrite(ctx context.Context, kind string, drama LibraryDrama, add bool) error
+}
+
+// DetailActionResult 是模組 detailAction 的回傳：OK 表示動作
+// 成功，Message 是前端 snackbar 顯示的訊息（可空）。
+type DetailActionResult struct {
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
+}
+
+// DetailActioner 是模組的詳情頁自訂動作能力（manifest 申報
+// detailActions，非 capability 字串，跟 FilterProvider 一樣
+// 直接 assert）：前端按申報出掣，撳咗呼叫模組的
+// detailAction(id, drama) export。
+type DetailActioner interface {
+	DetailAction(ctx context.Context, actionID string, drama LibraryDrama) (DetailActionResult, error)
 }
 
 var ErrLibraryWriteUnsupported = errors.New("站源未支援寫入收藏")

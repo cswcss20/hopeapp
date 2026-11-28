@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../../local_store.dart';
+import '../../models.dart';
 import '../../zh_script.dart';
 import '../app_scope.dart';
+import '../modules/browser_auth_view.dart';
+import '../modules/module_form_login_view.dart';
+import '../settings/captcha_account_view.dart';
 import '../settings/settings_page.dart';
-import '../settings/sorani_account_view.dart';
 import 'focus_ring.dart';
 import 'status_view.dart';
 
 /// 出错时的「一键自愈」引导。
 ///
-/// 站源加载失败大多是三类原因：Cloudflare 人机验证没过、需要登录（青空）、
+/// 站源加载失败大多是三类原因：Cloudflare 人机验证没过、需要登录、
 /// 或者网络连不上。这里按失败原因给出对应入口，用户不用自己去设置里翻：
 ///
 /// - 人机验证：调起应用内浏览器走完校验，成功后自动重试；
-/// - 青空登录：直接弹账号登录框；
+/// - 站源登录：按模組申報的登入方式（滑塊/表格/瀏覽器）直接弹
+///   對應登入入口；
 /// - 网络代理：跳到「设置 › 代理」。
 ///
 /// 没有任何可用的自愈手段时返回空列表，调用方回落到普通的「重试」按钮。
@@ -52,7 +56,10 @@ class SelfHealGuide {
         message.contains('手动完成验证') ||
         lower.contains('just a moment') ||
         lower.contains('cloudflare');
-    if (challenge && verify != null) {
+    // 模組申報咗 browserFetch 時，就算錯誤訊息冇提 Cloudflare，
+    // 都提供瀏覽器驗證入口（錯誤字串判斷保留作 fallback）。
+    final browserFetch = SourceSite.byId(source).browserFetch;
+    if ((challenge || browserFetch) && verify != null) {
       guides.add(
         SelfHealGuide(
           label: zh('完成人机验证'),
@@ -78,15 +85,24 @@ class SelfHealGuide {
         lower.contains('login') ||
         lower.contains('未授权') ||
         lower.contains('需要账号');
-    if (login && soraniAccountAvailable()) {
+    final site = SourceSite.byId(source);
+    final auth = site.effectiveAuth;
+    if (login && site.account && auth != null) {
       guides.add(
         SelfHealGuide(
-          label: zh('登录青空账号'),
+          label: zh('登录${site.name}账号'),
           icon: Icons.person_outline_rounded,
           onPressed: () async {
             if (!context.mounted) return;
-            final account = await showSoraniLogin(context);
-            if (account != null) onRetry();
+            if (auth.isCaptcha) {
+              final account = await showCaptchaLogin(context, source);
+              if (account != null) onRetry();
+            } else if (auth.isForm) {
+              final status = await showModuleFormLogin(context, source);
+              if (status != null) onRetry();
+            } else if (auth.isBrowser) {
+              await showBrowserAuth(context, source, onSaved: onRetry);
+            }
           },
         ),
       );

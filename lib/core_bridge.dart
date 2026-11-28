@@ -21,7 +21,7 @@ import 'resource_settings.dart';
 import 'diary_service.dart';
 import 'app_update.dart';
 import 'webview_bridge.dart';
-import 'sorani_account.dart';
+import 'captcha_account.dart';
 import 'source_modules.dart';
 
 typedef _NativeRequest = Pointer<Utf8> Function(Pointer<Utf8>);
@@ -273,16 +273,31 @@ abstract class AppRepository {
     String kind = 'favorites',
     required bool add,
   }) async => throw AppFailure('当前版本不支持收藏同步');
-  Future<SoraniAccount> soraniAccount() async => const SoraniAccount();
-  Future<SoraniCaptcha> soraniCaptcha() async =>
-      throw AppFailure('当前版本不支持登录青空次元');
-  Future<SoraniAccount> soraniLogin({
+  /// 執行模組申報的詳情頁自訂動作（detailActions）：回
+  /// {ok, message}，前端彈 snackbar。
+  Future<Map<String, dynamic>> detailAction(
+    String source,
+    String actionId,
+    Drama drama,
+  ) async => throw AppFailure('当前版本不支持此动作');
+  /// 將前端 LocalStore 的模組設定值成份同步入核心，供模組經
+  /// host.settings() 讀取。
+  Future<void> syncModuleSettings(
+    Map<String, Map<String, dynamic>> values,
+  ) async {}
+  Future<CaptchaAccount> captchaAccount(String source) async =>
+      const CaptchaAccount();
+  Future<CaptchaChallenge> captchaChallenge(String source) async =>
+      throw AppFailure('当前版本不支持滑块验证登录');
+  Future<CaptchaAccount> captchaLogin(
+    String source, {
     required String identifier,
     required String password,
     required String captchaId,
-    required SoraniCaptchaTrack track,
-  }) async => throw AppFailure('当前版本不支持登录青空次元');
-  Future<SoraniAccount> soraniLogout() async => const SoraniAccount();
+    required CaptchaTrack track,
+  }) async => throw AppFailure('当前版本不支持滑块验证登录');
+  Future<CaptchaAccount> captchaLogout(String source) async =>
+      const CaptchaAccount();
   Future<void> initialize();
   Future<CatalogPage> catalog(
     String source, {
@@ -795,6 +810,25 @@ class NativeRepository extends AppRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> detailAction(
+    String source,
+    String actionId,
+    Drama drama,
+  ) async => _call({
+    'action': 'detailAction',
+    'source': source,
+    'command': actionId,
+    'drama': drama.toJson(),
+  });
+
+  @override
+  Future<void> syncModuleSettings(
+    Map<String, Map<String, dynamic>> values,
+  ) async {
+    await _call({'action': 'moduleSettings', 'moduleSettings': values});
+  }
+
+  @override
   Future<String> sourceChallengeUrl(String source) async {
     final result = await _call({
       'action': 'sourceChallengeUrl',
@@ -828,35 +862,43 @@ class NativeRepository extends AppRepository {
   Future<bool> verifySource(String source) =>
       WebViewBridge.verifySource(this, source);
 
-  void _soraniPermission() {
+  void _accountPermission() {
     if (access != null && (access!.locked || !access!.profile.admin)) {
-      throw AppFailure('仅管理员可登录或退出青空次元账号');
+      throw AppFailure('仅管理员可登录或退出站源账号');
     }
   }
 
   @override
-  Future<SoraniAccount> soraniAccount() async =>
-      SoraniAccount.fromJson(await _call({'action': 'soraniAccount'}));
+  Future<CaptchaAccount> captchaAccount(String source) async =>
+      CaptchaAccount.fromJson(
+        await _call({'action': 'sourceAccount', 'source': source}),
+      );
 
   @override
-  Future<SoraniCaptcha> soraniCaptcha() async {
-    _soraniPermission();
-    return SoraniCaptcha.fromJson(
-      await _call({'action': 'soraniAccount', 'command': 'captcha'}),
+  Future<CaptchaChallenge> captchaChallenge(String source) async {
+    _accountPermission();
+    return CaptchaChallenge.fromJson(
+      await _call({
+        'action': 'sourceAccount',
+        'source': source,
+        'command': 'captcha',
+      }),
     );
   }
 
   @override
-  Future<SoraniAccount> soraniLogin({
+  Future<CaptchaAccount> captchaLogin(
+    String source, {
     required String identifier,
     required String password,
     required String captchaId,
-    required SoraniCaptchaTrack track,
+    required CaptchaTrack track,
   }) async {
-    _soraniPermission();
-    return SoraniAccount.fromJson(
+    _accountPermission();
+    return CaptchaAccount.fromJson(
       await _call({
-        'action': 'soraniAccount',
+        'action': 'sourceAccount',
+        'source': source,
         'command': 'login',
         'account': {
           'identifier': identifier,
@@ -869,10 +911,14 @@ class NativeRepository extends AppRepository {
   }
 
   @override
-  Future<SoraniAccount> soraniLogout() async {
-    _soraniPermission();
-    return SoraniAccount.fromJson(
-      await _call({'action': 'soraniAccount', 'command': 'logout'}),
+  Future<CaptchaAccount> captchaLogout(String source) async {
+    _accountPermission();
+    return CaptchaAccount.fromJson(
+      await _call({
+        'action': 'sourceAccount',
+        'source': source,
+        'command': 'logout',
+      }),
     );
   }
 
@@ -886,6 +932,7 @@ class NativeRepository extends AppRepository {
             'cancelPlayback',
             'cancelRead',
             'updateSystemProxy',
+            'moduleSettings',
           }.contains(action) ||
           action == 'workLease' && input['command'] == 'end' ||
           action == 'finishConversion' ||

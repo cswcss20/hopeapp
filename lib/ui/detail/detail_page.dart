@@ -18,6 +18,7 @@ import '../shell/app_shell.dart';
 import '../widgets/cover_backdrop.dart';
 import '../widgets/cover_image.dart';
 import '../widgets/focus_ring.dart';
+import '../widgets/detail_actions.dart';
 import '../widgets/follow_button.dart';
 import '../theme/motion.dart';
 import '../widgets/motion/motion_widgets.dart';
@@ -1010,6 +1011,10 @@ class _DetailPageState extends State<DetailPage> {
                     ),
                     LibrarySavePill(
                       store: widget.store,
+                      drama: details.drama,
+                      height: m.follow,
+                    ),
+                    DetailActionPills(
                       drama: details.drama,
                       height: m.follow,
                     ),

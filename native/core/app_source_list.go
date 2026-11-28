@@ -18,9 +18,17 @@ type nativeSourceInfo struct {
 	Library         bool   `json:"library"`
 	Adult           bool   `json:"adult"`
 	VIPPrompt       bool   `json:"vipPrompt"`
-	CoverAlign      string        `json:"coverAlign,omitempty"`
-	AuthURL         string        `json:"authUrl,omitempty"`
-	LibraryKinds    []LibraryKind `json:"libraryKinds,omitempty"`
+	CoverAlign      string               `json:"coverAlign,omitempty"`
+	AuthURL         string               `json:"authUrl,omitempty"`
+	LibraryKinds    []LibraryKind        `json:"libraryKinds,omitempty"`
+	BaseURL         string               `json:"baseUrl,omitempty"`
+	Hosts           []string             `json:"hosts,omitempty"`
+	Auth            *ModuleAuth          `json:"auth,omitempty"`
+	Settings        []ModuleSetting      `json:"settings,omitempty"`
+	DetailActions   []ModuleDetailAction `json:"detailActions,omitempty"`
+	BrowserFetch    bool                 `json:"browserFetch,omitempty"`
+	VerifyURL       string               `json:"verifyUrl,omitempty"`
+	CoverAspect     string               `json:"coverAspect,omitempty"`
 }
 
 func (engine *nativeEngine) sourceList() []nativeSourceInfo {
@@ -37,6 +45,9 @@ func (engine *nativeEngine) sourceList() []nativeSourceInfo {
 			Group: descriptor.Group, GroupName: descriptor.GroupName, EntryName: descriptor.EntryName,
 			Available: nativeSourceAvailable(id), VIPPrompt: !descriptor.SkipVIPPrompt, Adult: descriptor.Adult,
 			CoverAlign: descriptor.CoverAlign, AuthURL: descriptor.AuthURL, LibraryKinds: descriptor.LibraryKinds,
+			BaseURL: descriptor.BaseURL, Hosts: descriptor.Hosts, Auth: descriptor.Auth, Settings: descriptor.Settings,
+			DetailActions: descriptor.DetailActions, BrowserFetch: descriptor.BrowserFetch, VerifyURL: descriptor.VerifyURL,
+			CoverAspect: descriptor.CoverAspect,
 		}
 		_, search := providerAs[Searcher](p)
 		_, warningSearch := providerAs[WarningSearcher](p)

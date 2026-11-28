@@ -9,9 +9,12 @@ import 'package:media_kit/media_kit.dart';
 import '../../playback_preferences.dart';
 import '../../playback_session.dart';
 import '../../zh_script.dart';
+import '../../models.dart';
 import '../app_scope.dart';
+import '../modules/browser_auth_view.dart';
+import '../modules/module_form_login_view.dart';
+import '../settings/captcha_account_view.dart';
 import '../settings/settings_page.dart';
-import '../settings/sorani_account_view.dart';
 import '../theme/motion.dart';
 import '../widgets/contained_slider.dart';
 import '../widgets/cover_backdrop.dart';
@@ -1435,13 +1438,33 @@ class PlaybackFailure extends StatelessWidget {
                 runSpacing: 8,
                 alignment: WrapAlignment.center,
                 children: [
-                  if (session.loginRequired)
+                  if (session.loginRequired &&
+                      SourceSite.byId(
+                            session.detail.drama.source,
+                          ).effectiveAuth !=
+                          null)
                     FilledButton(
                       focusNode: retryFocus,
                       onPressed: () async {
-                        if (await showSoraniLogin(context) != null) {
-                          await session.retry();
+                        final source = session.detail.drama.source;
+                        final auth = SourceSite.byId(source).effectiveAuth;
+                        if (auth == null) return;
+                        var loggedIn = false;
+                        if (auth.isCaptcha) {
+                          loggedIn =
+                              await showCaptchaLogin(context, source) != null;
+                        } else if (auth.isForm) {
+                          loggedIn =
+                              await showModuleFormLogin(context, source) !=
+                              null;
+                        } else if (auth.isBrowser) {
+                          await showBrowserAuth(
+                            context,
+                            source,
+                            onSaved: () => loggedIn = true,
+                          );
                         }
+                        if (loggedIn) await session.retry();
                       },
                       child: const Text('去登录'),
                     )

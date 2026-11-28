@@ -74,9 +74,15 @@ type ModuleManifest struct {
 	KeepDetailEpisodes bool     `json:"keepDetailEpisodes"`
 	ContinuousFeed     bool     `json:"continuousFeed"`
 	BrowserFingerprint bool     `json:"browserFingerprint"`
-	CoverAlign         string        `json:"coverAlign"`
-	AuthURL            string        `json:"authUrl"`
-	LibraryKinds       []LibraryKind `json:"libraryKinds"`
+	CoverAlign         string               `json:"coverAlign"`
+	AuthURL            string               `json:"authUrl"`
+	LibraryKinds       []LibraryKind        `json:"libraryKinds"`
+	Auth               *ModuleAuth          `json:"auth"`
+	Settings           []ModuleSetting      `json:"settings"`
+	DetailActions      []ModuleDetailAction `json:"detailActions"`
+	BrowserFetch       bool                 `json:"browserFetch"`
+	VerifyURL          string               `json:"verifyUrl"`
+	CoverAspect        string               `json:"coverAspect"`
 
 	Rankings       []ModuleRanking `json:"rankings"`
 	MediaAuthPaths []string        `json:"mediaAuthPaths"`
@@ -197,6 +203,12 @@ func (module *jsModule) descriptor() SourceDescriptor {
 		CoverAlign:         module.manifest.CoverAlign,
 		AuthURL:            module.manifest.AuthURL,
 		LibraryKinds:       normalizeLibraryKinds(module.manifest.LibraryKinds),
+		Auth:               normalizeModuleAuth(module.manifest.Auth),
+		Settings:           normalizeModuleSettings(module.manifest.Settings),
+		DetailActions:      normalizeDetailActions(module.manifest.DetailActions),
+		BrowserFetch:       module.manifest.BrowserFetch,
+		VerifyURL:          strings.TrimSpace(module.manifest.VerifyURL),
+		CoverAspect:        normalizeCoverAspect(module.manifest.CoverAspect),
 	}
 }
 

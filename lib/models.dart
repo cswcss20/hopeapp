@@ -43,6 +43,192 @@ class LibraryKind {
   }
 }
 
+/// 模組在 manifest 申報的登入方式（auth）：type 決定登入入口
+/// 形態——'browser' 瀏覽器登入（url 登入頁、saveMode
+/// 'auto'/'manual'、bridge 保存後登記橋接與否）、'form' 表格
+/// 登入（fields 申報欄位，值經 sourceAccount('login', ...) 交
+/// 模組）、'captcha' 滑塊驗證碼登入（registerUrl 可選註冊頁）。
+class ModuleAuth {
+  const ModuleAuth({
+    required this.type,
+    this.url = '',
+    this.saveMode = 'manual',
+    this.bridge = false,
+    this.fields = const [],
+    this.registerUrl = '',
+  });
+
+  factory ModuleAuth.fromJson(Map<String, dynamic> json) => ModuleAuth(
+    type: (json['type'] as String? ?? '').trim(),
+    url: (json['url'] as String? ?? '').trim(),
+    saveMode: (json['saveMode'] as String? ?? '').trim() == 'auto'
+        ? 'auto'
+        : 'manual',
+    bridge: json['bridge'] == true,
+    fields: ModuleAuthField.listFromJson(json['fields']),
+    registerUrl: (json['registerUrl'] as String? ?? '').trim(),
+  );
+
+  static ModuleAuth? fromJsonOrNull(Object? value) {
+    if (value is! Map) return null;
+    final auth = ModuleAuth.fromJson(Map<String, dynamic>.from(value));
+    return auth.isValid ? auth : null;
+  }
+
+  final String type;
+  final String url;
+  final String saveMode;
+  final bool bridge;
+  final List<ModuleAuthField> fields;
+  final String registerUrl;
+
+  bool get isBrowser => type == 'browser';
+  bool get isForm => type == 'form';
+  bool get isCaptcha => type == 'captcha';
+  bool get isValid =>
+      isBrowser || isCaptcha || (isForm && fields.isNotEmpty);
+  bool get autoSave => saveMode == 'auto';
+}
+
+/// 表格登入的一個欄位申報：id 是交畀模組的 payload key，
+/// label 是顯示名，type 只認 'text'/'password'。
+class ModuleAuthField {
+  const ModuleAuthField({
+    required this.id,
+    required this.label,
+    this.type = 'text',
+    this.required = false,
+    this.hint = '',
+  });
+
+  factory ModuleAuthField.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String? ?? '').trim();
+    final label = (json['label'] as String? ?? '').trim();
+    return ModuleAuthField(
+      id: id,
+      label: label.isEmpty ? id : label,
+      type: (json['type'] as String? ?? '').trim() == 'pass' 'word'
+          ? 'pass' 'word'
+          : 'text',
+      required: json['required'] == true,
+      hint: (json['hint'] as String? ?? '').trim(),
+    );
+  }
+
+  final String id;
+  final String label;
+  final String type;
+  final bool required;
+  final String hint;
+
+  bool get isSecret => type == 'pass' 'word';
+
+  static List<ModuleAuthField> listFromJson(Object? value) {
+    final seen = <String>{};
+    return [
+      for (final row in value as List? ?? const [])
+        if (row is Map)
+          ModuleAuthField.fromJson(Map<String, dynamic>.from(row)),
+    ].where((field) => field.id.isNotEmpty && seen.add(field.id)).toList();
+  }
+}
+
+/// 模組在 manifest 申報的一個設定項（settings）：id 是
+/// host.settings() 回傳物件的 key，label 是顯示名，type 只認
+/// 'text'/'toggle'/'select'，defaultValue 是未設定時的預設值，
+/// options 是 select 的選項清單。
+class ModuleSetting {
+  const ModuleSetting({
+    required this.id,
+    required this.label,
+    this.type = 'text',
+    this.defaultValue,
+    this.options = const [],
+  });
+
+  factory ModuleSetting.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String? ?? '').trim();
+    final label = (json['label'] as String? ?? '').trim();
+    var type = (json['type'] as String? ?? '').trim();
+    if (type != 'toggle' && type != 'select') type = 'text';
+    final options = ModuleSettingOption.listFromJson(json['options']);
+    if (type == 'select' && options.isEmpty) type = 'text';
+    return ModuleSetting(
+      id: id,
+      label: label.isEmpty ? id : label,
+      type: type,
+      defaultValue: json['default'],
+      options: options,
+    );
+  }
+
+  final String id;
+  final String label;
+  final String type;
+  final Object? defaultValue;
+  final List<ModuleSettingOption> options;
+
+  bool get isToggle => type == 'toggle';
+  bool get isSelect => type == 'select';
+
+  static List<ModuleSetting> listFromJson(Object? value) {
+    final seen = <String>{};
+    return [
+      for (final row in value as List? ?? const [])
+        if (row is Map)
+          ModuleSetting.fromJson(Map<String, dynamic>.from(row)),
+    ].where((setting) => setting.id.isNotEmpty && seen.add(setting.id)).toList();
+  }
+}
+
+/// select 設定的一個選項：id 是存入的值，name 是顯示名。
+class ModuleSettingOption {
+  const ModuleSettingOption({required this.id, required this.name});
+
+  factory ModuleSettingOption.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String? ?? '').trim();
+    final name = (json['name'] as String? ?? '').trim();
+    return ModuleSettingOption(id: id, name: name.isEmpty ? id : name);
+  }
+
+  final String id;
+  final String name;
+
+  static List<ModuleSettingOption> listFromJson(Object? value) {
+    final seen = <String>{};
+    return [
+      for (final row in value as List? ?? const [])
+        if (row is Map)
+          ModuleSettingOption.fromJson(Map<String, dynamic>.from(row)),
+    ].where((option) => option.id.isNotEmpty && seen.add(option.id)).toList();
+  }
+}
+
+/// 模組在 manifest 申報的一個詳情頁自訂動作（detailActions）：
+/// id 是呼叫模組 detailAction(id, drama) 的動作標識，label
+/// 是掣名。
+class ModuleDetailAction {
+  const ModuleDetailAction({required this.id, required this.label});
+
+  factory ModuleDetailAction.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String? ?? '').trim();
+    final label = (json['label'] as String? ?? '').trim();
+    return ModuleDetailAction(id: id, label: label.isEmpty ? id : label);
+  }
+
+  final String id;
+  final String label;
+
+  static List<ModuleDetailAction> listFromJson(Object? value) {
+    final seen = <String>{};
+    return [
+      for (final row in value as List? ?? const [])
+        if (row is Map)
+          ModuleDetailAction.fromJson(Map<String, dynamic>.from(row)),
+    ].where((action) => action.id.isNotEmpty && seen.add(action.id)).toList();
+  }
+}
+
 class SourceSite {
   const SourceSite(
     this.id,
@@ -65,6 +251,14 @@ class SourceSite {
     this.coverAlign = '',
     this.authUrl = '',
     this.libraryKinds = const [],
+    this.baseUrl = '',
+    this.hosts = const [],
+    this.auth,
+    this.settings = const [],
+    this.detailActions = const [],
+    this.browserFetch = false,
+    this.verifyUrl = '',
+    this.coverAspect = '',
   });
   factory SourceSite.fromJson(Map<String, dynamic> json) => SourceSite(
     json['id'] as String? ?? '',
@@ -87,6 +281,18 @@ class SourceSite {
     coverAlign: json['coverAlign'] as String? ?? '',
     authUrl: json['authUrl'] as String? ?? '',
     libraryKinds: LibraryKind.listFromJson(json['libraryKinds']),
+    baseUrl: json['baseUrl'] as String? ?? '',
+    hosts: (json['hosts'] as List? ?? const []).whereType<String>().toList(),
+    auth: ModuleAuth.fromJsonOrNull(json['auth']),
+    settings: ModuleSetting.listFromJson(json['settings']),
+    detailActions: ModuleDetailAction.listFromJson(json['detailActions']),
+    browserFetch: json['browserFetch'] == true,
+    verifyUrl: json['verifyUrl'] as String? ?? '',
+    coverAspect: switch ((json['coverAspect'] as String? ?? '').trim()) {
+      'portrait' => 'portrait',
+      'landscape' => 'landscape',
+      _ => '',
+    },
   );
   final String id;
   final String name;
@@ -117,6 +323,28 @@ class SourceSite {
   // 「{來源} 收藏」tab 按申報順序生成子頁。未申報時為空，見
   // effectiveLibraryKinds 的向後相容預設。
   final List<LibraryKind> libraryKinds;
+  // 模組 manifest 申報的站點主地址（baseUrl）同可訪問域名清單
+  // （hosts）；舊模組登入 fallback 用 baseUrl 做登入頁地址。
+  final String baseUrl;
+  final List<String> hosts;
+  // 模組 manifest 申報的登入方式（auth）；未申報時為 null，見
+  // effectiveAuth 的向後相容 fallback。
+  final ModuleAuth? auth;
+  // 模組 manifest 申報的設定項清單（settings）；模組頁按申報
+  // 生成設定入口同泛用設定頁。未申報時為空。
+  final List<ModuleSetting> settings;
+  // 模組 manifest 申報的詳情頁自訂動作（detailActions）；詳情頁
+  // 按申報出掣。未申報時為空。
+  final List<ModuleDetailAction> detailActions;
+  // 模組申報攞頁要行瀏覽器橋接（browserFetch）：模組卡自動出
+  // 「瀏覽器驗證」入口。
+  final bool browserFetch;
+  // 模組申報的瀏覽器驗證頁地址（verifyUrl）；核心
+  // sourceChallengeURL 優先用申報值。
+  final String verifyUrl;
+  // 模組申報的封面卡預設比例（'portrait'/'landscape'/''）：
+  // 該來源 tab 未有使用者 per-tab 設定時用此預設。
+  final String coverAspect;
 
   /// 實際生效的收藏種類：有申報用申報；有 library 能力但冇申報
   /// 時預設只有 favorites（向後相容舊模組）；冇 library 能力回空。
@@ -130,6 +358,30 @@ class SourceSite {
   /// 唔出收藏掣、同步對該來源無動作。
   bool get hasFavoritesKind =>
       effectiveLibraryKinds.any((kind) => kind.isFavorites);
+
+  /// 實際生效的登入方式：有 auth 申報用申報；冇申報行舊模組
+  /// fallback——有 authUrl 嘅係帳號登入（手動保存、唔登記橋接，
+  /// MissAV 現行行為）；有 account 能力但冇 authUrl 嘅係
+  /// Cloudflare 驗證型（cf_clearance 自動保存＋登記橋接，登入頁
+  /// 用 baseUrl）；hosts 含 '*'（使用者自架伺服器型模組）嘅冇
+  /// 固定登入頁，唔行瀏覽器 fallback，要申報 form 先有入口；
+  /// 其餘（冇 account 能力）回 null，唔出登入入口。
+  ModuleAuth? get effectiveAuth {
+    final declared = auth;
+    if (declared != null) return declared;
+    if (authUrl.isNotEmpty) {
+      return ModuleAuth(type: 'browser', url: authUrl);
+    }
+    if (account && baseUrl.isNotEmpty && !hosts.contains('*')) {
+      return ModuleAuth(
+        type: 'browser',
+        url: baseUrl,
+        saveMode: 'auto',
+        bridge: true,
+      );
+    }
+    return null;
+  }
   bool get onlineSearch => pagedSearch;
   String get groupId => group.isEmpty ? id : group;
   String get groupName => groupLabel.isEmpty ? name : groupLabel;

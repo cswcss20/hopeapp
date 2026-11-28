@@ -35,6 +35,8 @@ type Downloader struct {
 	providersMu       sync.Mutex
 	providers         map[string]Provider
 	providerRevisions map[string]uint64
+	moduleSettingsMu  sync.RWMutex
+	moduleSettings    map[string]map[string]any
 	limiter           *requestLimiter
 	proxyRouter       *proxyRouter
 	directOnce        sync.Once
@@ -104,6 +106,7 @@ type nativeInput struct {
 	Version         string                  `json:"version"`
 	Since           string                  `json:"since"`
 	Account         json.RawMessage         `json:"account"`
+	ModuleSettings  map[string]map[string]any `json:"moduleSettings"`
 	Kind            string                  `json:"kind"`
 	Device          string                  `json:"device"`
 	File            string                  `json:"file"`
@@ -304,6 +307,7 @@ func newNativeEngine(directory, cache, downloads string) (*nativeEngine, error) 
 	}
 	d.loadModules()
 	engine.loadResourceSettings()
+	engine.loadModuleSettings()
 	d.loadRankingCache()
 	engine.loadCatalogCache()
 	engine.covers = newNativeCoverCache(cache, d)
@@ -423,12 +427,16 @@ func nativeDispatch(input nativeInput) (any, error) {
 		return engine.uninstallModule(input.Source)
 	case "sourceDevices":
 		return engine.sourceDevices(ctx, nativeActionSource(input), input.Command == "register")
-	case "soraniAccount", "sourceAccount":
+	case "sourceAccount":
 		return engine.sourceAccount(ctx, nativeActionSource(input), input.Command, input.Account)
 	case "libraryItems":
 		return engine.libraryItems(ctx, input)
 	case "libraryWrite":
 		return engine.libraryWrite(ctx, input)
+	case "detailAction":
+		return engine.detailAction(ctx, input)
+	case "moduleSettings":
+		return map[string]any{"ok": true}, engine.syncModuleSettings(input.ModuleSettings)
 	case "webViewBridge":
 		return engine.setWebViewBridge(input.Index, input.URL, input.Source, input.Token, input.Device), nil
 	case "sourceChallengeUrl":

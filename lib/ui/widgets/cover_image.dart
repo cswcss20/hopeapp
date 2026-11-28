@@ -14,17 +14,13 @@ const vipGold = Color(0xFFF6C86B);
 const onVipGold = Color(0xFF40300D);
 
 // 封面裁切方向由模組在 manifest 的 coverAlign 申報（"right"/"left"），
-// 經站源註冊表查回；未申報的舊模組保留原有寫死名單，行為不變。
+// 經站源註冊表查回；未申報時置中裁切。
 Alignment _coverAlignment(String source) {
   switch (SourceSite.byId(source).coverAlign) {
     case 'right':
       return Alignment.centerRight;
     case 'left':
       return Alignment.centerLeft;
-    case '':
-      return const {'chaoliu', '7mmtv', 'supjav-cookie'}.contains(source)
-          ? Alignment.centerRight
-          : Alignment.center;
     default:
       return Alignment.center;
   }

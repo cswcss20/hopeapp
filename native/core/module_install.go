@@ -36,10 +36,17 @@ type nativeModuleInfo struct {
 	Hosts        []string `json:"hosts"`
 	Capabilities []string `json:"capabilities"`
 	Adult        bool     `json:"adult"`
-	CoverAlign   string        `json:"coverAlign,omitempty"`
-	AuthURL      string        `json:"authUrl,omitempty"`
-	LibraryKinds []LibraryKind `json:"libraryKinds,omitempty"`
-	Installed    bool     `json:"installed"`
+	CoverAlign    string               `json:"coverAlign,omitempty"`
+	AuthURL       string               `json:"authUrl,omitempty"`
+	LibraryKinds  []LibraryKind        `json:"libraryKinds,omitempty"`
+	Auth          *ModuleAuth          `json:"auth,omitempty"`
+	Settings      []ModuleSetting      `json:"settings,omitempty"`
+	DetailActions []ModuleDetailAction `json:"detailActions,omitempty"`
+	BrowserFetch  bool                 `json:"browserFetch,omitempty"`
+	VerifyURL     string               `json:"verifyUrl,omitempty"`
+	CoverAspect   string               `json:"coverAspect,omitempty"`
+	BaseURL       string               `json:"baseUrl,omitempty"`
+	Installed     bool                 `json:"installed"`
 	Previous     string   `json:"previous,omitempty"`
 	Token        string   `json:"token,omitempty"`
 	Error        string   `json:"error,omitempty"`
@@ -47,7 +54,9 @@ type nativeModuleInfo struct {
 
 func moduleInfo(manifest ModuleManifest) nativeModuleInfo {
 	return nativeModuleInfo{ID: manifest.ID, Name: manifest.Name, Version: manifest.Version, Description: manifest.Description,
-		Hosts: manifest.Hosts, Capabilities: manifest.Capabilities, Adult: *manifest.Adult, CoverAlign: manifest.CoverAlign, AuthURL: manifest.AuthURL, LibraryKinds: normalizeLibraryKinds(manifest.LibraryKinds)}
+		Hosts: manifest.Hosts, Capabilities: manifest.Capabilities, Adult: *manifest.Adult, CoverAlign: manifest.CoverAlign, AuthURL: manifest.AuthURL, LibraryKinds: normalizeLibraryKinds(manifest.LibraryKinds),
+		Auth: normalizeModuleAuth(manifest.Auth), Settings: normalizeModuleSettings(manifest.Settings), DetailActions: normalizeDetailActions(manifest.DetailActions),
+		BrowserFetch: manifest.BrowserFetch, VerifyURL: strings.TrimSpace(manifest.VerifyURL), CoverAspect: normalizeCoverAspect(manifest.CoverAspect), BaseURL: manifest.BaseURL}
 }
 
 func (engine *nativeEngine) modules() ([]nativeModuleInfo, error) {
