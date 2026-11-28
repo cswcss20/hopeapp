@@ -380,20 +380,6 @@
       }
     },
     {
-      "id": "anime1",
-      "name": "Anime1",
-      "version": "1.0.71",
-      "description": "動畫線上看 · 最新更新＋按年份分類",
-      "api": 1,
-      "adult": false,
-      "repo": "cswcss20/hopeapp-modules",
-      "tag": "v1.0.71",
-      "sha256": {
-        "manifest.json": "2a0fa2bc47949b3d4537c435e5407c2293fce00142756bd6ae26dbb0fc3583da",
-        "main.js": "a1acc7c51aa670d81c9dcc80667e85e8a86029810b774a9c756b54ad5658ff5a"
-      }
-    },
-    {
       "id": "xykk",
       "name": "小鴨看看",
       "version": "1.0.90",
