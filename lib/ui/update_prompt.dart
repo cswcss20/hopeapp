@@ -322,21 +322,21 @@ class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
 }
 
 Future<void> _installWindows(File setup) async {
-  final directory = await getTemporaryDirectory();
-  final script = File(
-    '${directory.path}${Platform.pathSeparator}hopeapp_update.bat',
-  );
   // Wait briefly so this process has exited (the installer checks an app
   // mutex), then run the Inno Setup installer silently. The installer
   // relaunches the app afterwards (see windows/installer/setup.iss).
-  await script.writeAsString(
-    '@echo off\r\n'
-    'timeout /t 2 /nobreak >nul\r\n'
-    '"${setup.path}" /SILENT /SUPPRESSMSGBOXES /NORESTART\r\n',
-  );
-  await Process.start('cmd', [
-    '/c',
-    script.path,
+  // A hidden PowerShell does the waiting/launching so no console window
+  // ever appears (the previous .bat + cmd approach flashed a CMD window).
+  final setupPath = setup.path.replaceAll("'", "''");
+  await Process.start('powershell', [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-WindowStyle',
+    'Hidden',
+    '-Command',
+    "Start-Sleep -Seconds 2; Start-Process -FilePath '$setupPath' "
+        "-ArgumentList '/SILENT','/SUPPRESSMSGBOXES','/NORESTART'",
   ], mode: ProcessStartMode.detached);
   exit(0);
 }
