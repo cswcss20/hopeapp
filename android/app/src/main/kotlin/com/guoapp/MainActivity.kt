@@ -43,6 +43,7 @@ import android.view.WindowManager
 import android.provider.Settings
 import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.annotation.RequiresApi
+import androidx.core.content.FileProvider
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterShellArgs
 import io.flutter.plugin.common.MethodChannel
@@ -539,6 +540,14 @@ class MainActivity : FlutterActivity() {
                                 )
                             }
                         }
+                        "installApk" -> {
+                            val path = call.argument<String>("path")
+                            if (path.isNullOrEmpty()) {
+                                result.error("invalid_path", "安装包路径为空", null)
+                            } else {
+                                installApk(File(path), result)
+                            }
+                        }
                         "exportVideo" -> {
                             val source = call.argument<String>("source")
                             val folder = call.argument<String>("folder")
@@ -561,6 +570,37 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
+    }
+
+    private fun installApk(file: File, result: MethodChannel.Result) {
+        if (!file.isFile) {
+            result.error("missing_file", "安装包不存在", null)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            runCatching {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+                        .setData(Uri.parse("package:$packageName"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            result.error("install_permission", "尚未允许安装未知应用", null)
+            return
+        }
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("install_failed", "无法启动安装：${e.message}", null)
+        }
     }
 
     private fun exportVideo(source: File, folder: String, name: String) {

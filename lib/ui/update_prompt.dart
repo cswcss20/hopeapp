@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../app_device.dart';
 import '../app_update.dart';
 import '../core_bridge.dart';
 import '../local_store.dart';
@@ -55,7 +59,7 @@ Future<void> _checkAppUpdateAtStartup(
     case _UpdateChoice.skip:
       await store.setIgnoredUpdate(update.version);
     case _UpdateChoice.download:
-      if (context.mounted) await _openRelease(context, update.url);
+      if (context.mounted) await _downloadAndInstall(context, update);
     case _UpdateChoice.dismiss || null:
       return;
   }
@@ -93,7 +97,7 @@ Future<void> checkUpdateManually(BuildContext context) async {
   if (!context.mounted) return;
   final choice = await _askUpdate(context, current, update, manual: true);
   if (choice == _UpdateChoice.download && context.mounted) {
-    await _openRelease(context, update.url);
+    await _downloadAndInstall(context, update);
   }
 }
 
@@ -135,6 +139,217 @@ Future<_UpdateChoice?> _askUpdate(
       ],
     ),
   );
+}
+
+AppUpdateAsset? _platformAsset(AppUpdate update) {
+  for (final asset in update.assets) {
+    if (Platform.isWindows && asset.name.endsWith('-setup.exe')) return asset;
+    if (Platform.isAndroid &&
+        asset.name.contains('arm64-v8a') &&
+        asset.name.endsWith('.apk')) {
+      return asset;
+    }
+  }
+  return null;
+}
+
+Future<void> _downloadAndInstall(BuildContext context, AppUpdate update) async {
+  final asset = _platformAsset(update);
+  if (asset == null) {
+    // iOS and other platforms without an in-app installer asset fall back
+    // to the release page.
+    await _openRelease(context, update.url);
+    return;
+  }
+  final messenger = ScaffoldMessenger.of(context);
+  final result = await showDialog<Object?>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _UpdateDownloadDialog(asset: asset),
+  );
+  if (result == null) {
+    messenger.showSnackBar(const SnackBar(content: Text('已取消更新')));
+    return;
+  }
+  if (result is _DownloadFailure) {
+    messenger.showSnackBar(
+      SnackBar(content: Text('更新失败：${result.failure}')),
+    );
+    return;
+  }
+  final file = result as File;
+  try {
+    if (Platform.isWindows) {
+      await _installWindows(file);
+    } else if (Platform.isAndroid) {
+      await _installAndroid(file);
+    }
+  } catch (failure) {
+    messenger.showSnackBar(SnackBar(content: Text('更新失败：$failure')));
+  }
+}
+
+class _DownloadFailure {
+  const _DownloadFailure(this.failure);
+  final Object failure;
+}
+
+class _UpdateDownloadDialog extends StatefulWidget {
+  const _UpdateDownloadDialog({required this.asset});
+  final AppUpdateAsset asset;
+
+  @override
+  State<_UpdateDownloadDialog> createState() => _UpdateDownloadDialogState();
+}
+
+class _UpdateDownloadDialogState extends State<_UpdateDownloadDialog> {
+  double? _progress;
+  var _status = '正在下载…';
+  HttpClientRequest? _request;
+  var _cancelled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    try {
+      final file = await _download();
+      if (!mounted) return;
+      Navigator.pop(context, file);
+    } catch (failure) {
+      if (!mounted) return;
+      Navigator.pop(context, _cancelled ? null : _DownloadFailure(failure));
+    }
+  }
+
+  void _cancel() {
+    _cancelled = true;
+    _request?.abort();
+  }
+
+  Future<File> _download() async {
+    final directory = await getTemporaryDirectory();
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}${widget.asset.name}',
+    );
+    final complete =
+        widget.asset.size > 0 &&
+        await file.exists() &&
+        await file.length() == widget.asset.size;
+    if (!complete) {
+      final client = HttpClient();
+      try {
+        final request = await client.getUrl(Uri.parse(widget.asset.url));
+        _request = request;
+        final response = await request.close();
+        if (response.statusCode != HttpStatus.ok) {
+          throw '下载失败：HTTP ${response.statusCode}';
+        }
+        final total = response.contentLength > 0
+            ? response.contentLength
+            : widget.asset.size;
+        final sink = file.openWrite();
+        var received = 0;
+        try {
+          await for (final chunk in response) {
+            if (_cancelled) throw '已取消';
+            sink.add(chunk);
+            received += chunk.length;
+            if (mounted) {
+              setState(
+                () => _progress = total > 0 ? received / total : null,
+              );
+            }
+          }
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+      } finally {
+        client.close(force: true);
+      }
+      if (_cancelled) {
+        await file.delete().catchError((_) => file);
+        throw '已取消';
+      }
+    }
+    if (widget.asset.size > 0 && await file.length() != widget.asset.size) {
+      await file.delete().catchError((_) => file);
+      throw '下载文件大小不符，请重试';
+    }
+    final digest = widget.asset.digest;
+    if (digest.startsWith('sha256:')) {
+      if (mounted) setState(() => _status = '正在验证…');
+      final actual = await sha256.bind(file.openRead()).first;
+      if (actual.toString() !=
+          digest.substring('sha256:'.length).toLowerCase()) {
+        await file.delete().catchError((_) => file);
+        throw '下载文件验证失败，请重试';
+      }
+    }
+    return file;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _progress;
+    return AlertDialog(
+      title: const Text('正在更新'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(value: progress),
+          const SizedBox(height: 12),
+          Text(
+            progress == null
+                ? _status
+                : '$_status ${(progress * 100).toStringAsFixed(0)}%',
+          ),
+        ],
+      ),
+      actions: [
+        FocusRing(
+          radius: 20,
+          child: TextButton(onPressed: _cancel, child: const Text('取消')),
+        ),
+      ],
+    );
+  }
+}
+
+Future<void> _installWindows(File setup) async {
+  final directory = await getTemporaryDirectory();
+  final script = File(
+    '${directory.path}${Platform.pathSeparator}hopeapp_update.bat',
+  );
+  // Wait briefly so this process has exited (the installer checks an app
+  // mutex), then run the Inno Setup installer silently. The installer
+  // relaunches the app afterwards (see windows/installer/setup.iss).
+  await script.writeAsString(
+    '@echo off\r\n'
+    'timeout /t 2 /nobreak >nul\r\n'
+    '"${setup.path}" /SILENT /SUPPRESSMSGBOXES /NORESTART\r\n',
+  );
+  await Process.start('cmd', [
+    '/c',
+    script.path,
+  ], mode: ProcessStartMode.detached);
+  exit(0);
+}
+
+Future<void> _installAndroid(File apk) async {
+  try {
+    await AppDevice.channel.invokeMethod('installApk', {'path': apk.path});
+  } on PlatformException catch (failure) {
+    if (failure.code == 'install_permission') {
+      throw '请先允许本应用安装未知应用，然后再按更新';
+    }
+    rethrow;
+  }
 }
 
 Future<void> _openRelease(BuildContext context, String url) async {

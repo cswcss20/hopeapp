@@ -744,6 +744,11 @@ class NativeRepository extends AppRepository {
         ? AppUpdate(
             version: result['version'] as String,
             url: result['url'] as String,
+            assets: [
+              for (final asset in result['assets'] as List? ?? const [])
+                if (asset is Map)
+                  AppUpdateAsset.fromJson(asset.cast<String, dynamic>()),
+            ],
           )
         : null;
   }
